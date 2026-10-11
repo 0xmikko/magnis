@@ -48,6 +48,15 @@ function baseChat(over: Partial<TgChat> = {}): TgChat {
 }
 
 describe("message payload", () => {
+  test("tst_src_communication_003 direction is account-relative and receipt time stays unknown", () => {
+    expect(messagePayload(baseMessage())).toHaveProperty("communication", [
+      { kind: "received", occurredAt: null },
+    ]);
+    expect(messagePayload(baseMessage({ is_outgoing: true }))).toHaveProperty("communication", [
+      { kind: "sent", occurredAt: "2026-05-20T10:00:00Z" },
+    ]);
+  });
+
   // Twin of tst_conn_telegram_env_001.
   test("tst_tgts_env_001 plain message: canonical payload, remote_id, cursor", () => {
     const env = messageEnvelope(

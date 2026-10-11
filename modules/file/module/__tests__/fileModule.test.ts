@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { EntityWithLinks, JsonObject } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import { entity, entityId, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { FileModule } from "../service.ts";
 
 type G = MockGraph;
@@ -126,7 +126,7 @@ describe("file.list (filters + content skip)", () => {
     ]));
     const res = await makeModule(g).list({ mime_prefix: "image/" });
     expect(res.total).toBe(3); // total is the unfiltered count (matches native)
-    expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]); // i2 wrong mime, i3 no content
+    expect(res.items.map((i) => i.entity_id)).toEqual([entityId("i1")]); // i2 wrong mime, i3 no content
   });
 });
 
@@ -148,12 +148,12 @@ describe("tst_cat_entity_one_type_006 — file speaks the SDK shapes", () => {
       entity("i2", "b", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "b" } }),
     ]));
     spy(g, "listLinksForEntity").mockImplementation((id: string) =>
-      Promise.resolve(id === "i1" ? [link("parentX", "i1", "file.attachment")] : [link("other", "i2", "file.attachment")]),
+      Promise.resolve(id === entityId("i1") ? [link("parentX", "i1", "file.attachment")] : [link("other", "i2", "file.attachment")]),
     );
 
-    const res = await makeModule(g).list({ parent_id: "parentX" });
+    const res = await makeModule(g).list({ parent_id: entityId("parentX") });
 
-    expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]);
+    expect(res.items.map((i) => i.entity_id)).toEqual([entityId("i1")]);
     expect(g.spies.listEntitiesWindow).toHaveBeenCalledWith({
       schema: "file.object",
       order: [{ field: { entityField: "date" }, desc: true }],

@@ -10,7 +10,7 @@
 id = "telegram"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 title = "Telegram Messages"
 summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 # Reverse-domain publisher identity.
@@ -32,7 +32,7 @@ fieldType = { type = "enum", options = [{ value = "current", label = "Current el
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.telegram]
 # A missing chat says neither that membership ended nor when. Only a dated
-# participant update may close observed_in, so the host runs no snapshot decay.
+# participant update may close telegram.observed_in, so the host runs no snapshot decay.
 reconciliation = { mode = "none" }
 # The surface's primary-item schema.
 item = "telegram.message"
@@ -42,12 +42,22 @@ progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
 
 # Foreign asks beyond the implicit own namespace: writes to `telegram.` records,
 # own:own links, and reads of own schemas need no declaration.
+[[links]]
+kind = "sent"
+from = "telegram.account"
+to = "telegram.message"
+
+[[links]]
+kind = "received"
+from = "telegram.account"
+to = "telegram.message"
+
 [permissions]
 read = [ "contacts.person", "episodes.episode" ]
 # S4: the module writes REGISTRY relations now (authored_by / in_chat /
-# observed_in / observed_participant) between its own nodes; the colon
+# telegram.observed_in / telegram.observed_participant) between its own nodes; the colon
 # pairs retire with the migration.
-links = [ "authored_by", "in_chat", "observed_in", "observed_participant" ]
+links = [ "sent", "received", "authored_by", "in_chat", "telegram.observed_in", "telegram.observed_participant" ]
 call = [ "triggers.create" ]
 host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
 
@@ -55,3 +65,23 @@ host = [ "source_commands", "sync_state", "composer", "file_register", "web_regi
 # defaults — rewritten to host-shim URLs at build/transpile time.
 [ui]
 extra_bare_imports = [ "react-virtuoso", "zustand", "zustand/vanilla" ]
+
+[[links]]
+kind = "telegram.observed_in"
+from = "telegram.account"
+to = "telegram.chat"
+
+[[links]]
+kind = "telegram.observed_participant"
+from = "telegram.account"
+to = "telegram.chat"
+
+[[links]]
+kind = "authored_by"
+from = "telegram.message"
+to = "telegram.account"
+
+[[links]]
+kind = "in_chat"
+from = "telegram.message"
+to = "telegram.chat"

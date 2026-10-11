@@ -1,7 +1,7 @@
 // Telegram plugin — backend module (read path, Stage 1). Runs in the V8
 // isolate. Ports the native chat_resolver/service read logic: chat list
 // (pinned-first, search, top-10 inlined messages), chat-scoped + global message
-// list, message detail, set_indexed. Output is byte-compatible with the native
+// list, message detail and synchronization control. Output is byte-compatible with the native
 // module (MessageListItem / MessageDetailView / TelegramChatListItem).
 //
 // Deferred to the Stage 6 frontend cutover (read-time enrichments, verified
@@ -30,11 +30,13 @@ import {
   type SyncMigrationStatus,
   type SyncTargetResult,
 } from "@magnis/plugin-sdk";
+import { communicationMessageExternalId } from "@magnis/sdk/core/communication";
 import type {
   BatchEntityInput,
   BatchLink,
   BatchRef,
   Entity,
+  EntityRead,
   JsonObject,
   Link,
   LinkedEntity,
@@ -64,7 +66,6 @@ import type {
   MessagesListParams,
   ReplyParams,
   SendParams,
-  SetIndexedParams,
   SetTriggerParams,
   TelegramChatListItem,
 } from "../types.ts";
@@ -161,10 +162,21 @@ const SYNC_ENABLED_PARAMS = {
   additionalProperties: false,
 };
 
+function communicationOf(payload: Data): (Pick<BatchLink, "kind"> & { metadata: JsonObject })[] {
+  if (payload.communication === undefined) return [];
+  if (!Array.isArray(payload.communication)) throw new Error("Invalid Telegram communication observations");
+  return payload.communication.map((value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value) || (value.kind !== "sent" && value.kind !== "received")) throw new Error("Invalid Telegram communication observation");
+    const occurredAt = value.occurredAt;
+    if (occurredAt !== null && typeof occurredAt !== "string") throw new Error("Communication observation requires an explicit occurrence time or null");
+    // Graph owns the canonical timestamp and conversation validators.
+    return { kind: value.kind, metadata: { occurredAt, conversationId: null } };
+  });
+}
+
 interface IngestedChatState {
   readonly entityId: string;
   readonly details: Data;
-  readonly indexed: boolean;
 }
 
 /** One message envelope of a page with everything derived from it read once:
@@ -173,6 +185,7 @@ interface PageMessage {
   readonly env: SyncEnvelope;
   readonly payload: Data;
   readonly remoteId: string;
+  readonly externalId: string;
   readonly chatId: string | null;
   readonly senderId: number | null;
   readonly isLive: boolean;
@@ -220,6 +233,7 @@ function pageMessageOf({ env, payload }: { env: SyncEnvelope; payload: Data }): 
     env,
     payload,
     remoteId: env.remoteId ?? "",
+    externalId: communicationMessageExternalId("telegram.message", env.accountId, env.remoteId ?? ""),
     chatId: chatIdOrNull(payload),
     senderId: typeof senderId === "number" ? senderId : null,
     isLive: env.kind === "live",
@@ -239,7 +253,7 @@ function countLiveByChat(page: readonly PageMessage[], newLiveMessages: Readonly
 
 /** The message's dictionary: the payload minus what the edges represent. */
 function messageDictionary(payload: Data): Data {
-  const { entity_type: _entityType, chat_id: _chatId, sender_id: _senderId, sender_name: _senderName, ...rest } = payload;
+  const { communication: _communication, entity_type: _entityType, chat_id: _chatId, sender_id: _senderId, sender_name: _senderName, ...rest } = payload;
   return rest;
 }
 
@@ -272,7 +286,7 @@ function senderEntity(message: PageMessage, identityKey: string | undefined): Ba
  * account), in_chat (message → chat), observed_participant (account → chat).
  * Keyed maps ARE the deduplication. Pure: no graph, no await.
  * @tested-by: tst_module_telegram_004 */
-function buildFragment(page: readonly PageMessage[], identityKey: string | undefined): Fragment {
+function buildFragment(page: readonly PageMessage[], identityKey: string | undefined, chats: ChatContext): Fragment {
   const fragment: Fragment = { entities: new Map(), refs: new Map(), links: new Map() };
   const link = (fromKey: string, toKey: string, kind: string, declaredBy: string): void => {
     fragment.links.set(`${fromKey} ${toKey} ${kind}`, {
@@ -288,25 +302,37 @@ function buildFragment(page: readonly PageMessage[], identityKey: string | undef
       name: Array.from(text).slice(0, 80).join(""),
       idx: message.chatId,
       date: str(message.payload, "date"),
-      externalId: message.remoteId,
+      externalId: message.externalId,
       properties: messageDictionary(message.payload),
     });
     if (message.chatId !== null && chatKey !== null) {
       fragment.refs.set(chatKey, { key: chatKey, externalId: chatExternalId(message.chatId) });
       link(message.remoteId, chatKey, "in_chat", message.remoteId);
     }
+    for (const observation of communicationOf(message.payload)) {
+      if (!identityKey) throw new Error("Telegram observation requires the connected account identity");
+      const accountKey = `acct:${identityKey}`;
+      fragment.refs.set(accountKey, { key: accountKey, externalId: accountExternalId(identityKey) });
+      const conversationId = message.chatId === null ? null : chats.get(message.chatId)?.entityId;
+      if (conversationId === undefined) throw new Error("Telegram observation has no admitted conversation");
+      fragment.links.set(`${accountKey} ${message.remoteId} ${observation.kind}`, {
+        fromKey: accountKey, toKey: message.remoteId, kind: observation.kind,
+        metadata: { ...observation.metadata, conversationId }, confidence: null,
+        declaredBy: message.remoteId, validFrom: null, validUntil: null,
+      });
+    }
     const sender = senderEntity(message, identityKey);
     if (sender === null) continue;
     if (!fragment.entities.has(sender.key)) fragment.entities.set(sender.key, sender);
     link(message.remoteId, sender.key, "authored_by", message.remoteId);
-    if (chatKey !== null) link(sender.key, chatKey, "observed_participant", message.remoteId);
+    if (chatKey !== null) link(sender.key, chatKey, "telegram.observed_participant", message.remoteId);
   }
+  for (const key of fragment.entities.keys()) fragment.refs.delete(key);
   return fragment;
 }
 
-/** The attachment a message carries, or nothing. `is_indexed` gates the byte
- * fetch, not the entity: a non-indexed chat still registers the file.object —
- * the bytes are pulled on demand when the user opens it. */
+/** Message admission already checks the chat's saved syncEnabled choice.
+ * An admitted attachment is registered and queued for automatic download. */
 function attachmentOf(
   message: PageMessage,
   chats: ChatContext,
@@ -320,7 +346,7 @@ function attachmentOf(
   if (chat === undefined) throw new Error("Telegram attachment has no admitted chat");
   return [{
     externalId: `file:telegram:${message.chatId}:${String(messageId)}`,
-    parentExternalId: message.remoteId,
+    parentExternalId: message.externalId,
     linkKind: "file.attachment",
     ...(fileName === null ? {} : { name: fileName }),
     mimeType: mediaTypeToMime(mediaType),
@@ -332,7 +358,7 @@ function attachmentOf(
     // doesn't exist ("no source runtime for (telegram, telegram)").
     sourceModule: message.env.sourceId,
     sourceSurface: "telegram",
-    download: chat.indexed,
+    download: true,
   }];
 }
 
@@ -480,7 +506,22 @@ export class TelegramModule {
     this.rpc = deps.rpc;
   }
 
-  private async operatorAccount(): Promise<Entity | null> {
+  private async operatorAccount(accountId?: string): Promise<Entity | null> {
+    if (accountId !== undefined) {
+      let offset = 0;
+      let selected: Entity | null = null;
+      for (;;) {
+        const page = await this.graph.listEntitiesByPropertyField({ entitySchema: TELEGRAM_ACCOUNT, key: "is_self", value: "true", limit: pageLimitMax, offset });
+        for (const account of page.items) {
+          if (account.origin !== "canonical" || account.source.account !== accountId) continue;
+          if (selected !== null) throw new Error("Telegram connected account has multiple operator identities");
+          selected = account;
+        }
+        offset += page.items.length;
+        if (offset >= page.total) return selected;
+        if (page.items.length === 0) throw new Error("Telegram account lookup did not advance");
+      }
+    }
     const selves = await this.graph.listEntitiesByPropertyField({
       entitySchema: TELEGRAM_ACCOUNT,
       key: "is_self",
@@ -507,7 +548,7 @@ export class TelegramModule {
     const rows: LinkedEntity[] = [];
     let total: number;
     do {
-      const page = await this.graph.listLinked({ parentId: chatId, linkKind: "observed_in", direction: "in", limit: 1000, offset: rows.length });
+      const page = await this.graph.listLinked({ parentId: chatId, linkKind: "telegram.observed_in", direction: "in", limit: 1000, offset: rows.length });
       total = page.total;
       if (page.items.length === 0 && rows.length < total) throw new Error("Telegram observer page ended before its declared total");
       rows.push(...page.items);
@@ -574,14 +615,14 @@ export class TelegramModule {
     return status;
   }
 
-  private syncChoice(entity: Entity): SyncChoice {
-    if (!("syncEnabled" in entity) || typeof entity.syncEnabled !== "boolean"
-      || !("syncRevision" in entity) || typeof entity.syncRevision !== "string" || !/^\d+$/.test(entity.syncRevision)) {
+  private syncChoice(read: EntityRead): SyncChoice {
+    const { entity, extras } = read;
+    if (extras.syncEnabled === null) {
       throw new Error(`Telegram chat ${entity.id} has no valid saved synchronization choice`);
     }
     const scopeId = chatIdOrNull(objectOf(entity.properties, "chat properties"));
     if (scopeId === null) throw new Error(`Telegram chat ${entity.id} has no provider chat ID`);
-    return { id: entity.id, scopeId, syncEnabled: entity.syncEnabled, syncRevision: entity.syncRevision };
+    return { id: entity.id, scopeId, syncEnabled: extras.syncEnabled, syncRevision: extras.syncRevision };
   }
 
   @rpc("sync.selection", {
@@ -610,13 +651,13 @@ export class TelegramModule {
         let linkedOffset = 0;
         let linkedTotal: number;
         do {
-          const linked = await this.graph.listLinked({ parentId: self.id, linkKind: "observed_in", direction: "out", childSchema: CHAT, limit: 500, offset: linkedOffset });
+          const linked = await this.graph.listLinked({ extras: true, parentId: self.id, linkKind: "telegram.observed_in", direction: "out", childSchema: CHAT, limit: 500, offset: linkedOffset });
           linkedTotal = linked.total;
           if (linked.items.length === 0 && linkedOffset < linkedTotal) throw new Error("Telegram membership page ended before its declared total");
           linkedOffset += linked.items.length;
           for (const row of linked.items) {
             if (row.link.validUntil !== null) continue;
-            choices.set(row.entity.id, this.syncChoice(row.entity));
+            choices.set(row.entity.id, this.syncChoice(row));
           }
         } while (linkedOffset < linkedTotal);
       }
@@ -630,7 +671,7 @@ export class TelegramModule {
   /// this query proportional to the small pinned set.
   private async operatorObservedState(): Promise<{
     readonly byChatId: Map<string, Data>;
-    readonly orderedChats: Entity[];
+    readonly orderedChats: EntityRead[];
     readonly total: number;
     readonly observerExternalId: string;
   } | null> {
@@ -640,20 +681,20 @@ export class TelegramModule {
     const observerExternalId = self.source.externalId;
 
     const { pinnedChats, pinnedTotal } = await this.pinnedChatsWindow(observerExternalId);
-    const byChatId = await this.observedStateFor(pinnedChats.map(({ id }) => id), self.id);
+    const byChatId = await this.observedStateFor(pinnedChats.map(({ entity }) => entity.id), self.id);
     const orderedChats = pinnedChats
       .sort((left, right) => {
-        const leftState = byChatId.get(left.id) ?? {};
-        const rightState = byChatId.get(right.id) ?? {};
+        const leftState = byChatId.get(left.entity.id) ?? {};
+        const rightState = byChatId.get(right.entity.id) ?? {};
         const pinOrder = (num(leftState, "pin_order") ?? Number.MAX_SAFE_INTEGER) -
           (num(rightState, "pin_order") ?? Number.MAX_SAFE_INTEGER);
         if (pinOrder !== 0) return pinOrder;
-        const leftProperties = objectOf(left.properties, "chat properties");
-        const rightProperties = objectOf(right.properties, "chat properties");
+        const leftProperties = objectOf(left.entity.properties, "chat properties");
+        const rightProperties = objectOf(right.entity.properties, "chat properties");
         const recency = (str(rightProperties, "last_message_date") ?? "").localeCompare(
           str(leftProperties, "last_message_date") ?? "",
         );
-        return recency !== 0 ? recency : left.id.localeCompare(right.id);
+        return recency !== 0 ? recency : left.entity.id.localeCompare(right.entity.id);
       });
     return { byChatId, orderedChats, total: pinnedTotal, observerExternalId };
   }
@@ -661,7 +702,7 @@ export class TelegramModule {
   /// The operator's pinned chats through the edge-filtered chat window:
   /// proportional to the pinned set, never a traversal per chat.
   /// @tested-by: tst_module_telegram_read_004, tst_bts_prt_ops_030, tst_module_telegram_plan_001
-  private async pinnedChatsWindow(observerExternalId: string): Promise<{ pinnedChats: Entity[]; pinnedTotal: number }> {
+  private async pinnedChatsWindow(observerExternalId: string): Promise<{ pinnedChats: EntityRead[]; pinnedTotal: number }> {
     const pinned = await this.observedChatsWindow(observerExternalId, {
       edgePath: "is_pinned", op: "eq", eq: "true",
       order: [{ field: { propertyPath: "last_message_date" }, desc: true }],
@@ -677,14 +718,15 @@ export class TelegramModule {
   private async observedChatsWindow(
     observerExternalId: string,
     filter: { edgePath: string; op: "eq" | "distinct"; eq: string; order?: { field: { propertyPath: string }; desc: boolean }[] },
-  ): Promise<Entity[]> {
-    const chats: Entity[] = [];
+  ): Promise<EntityRead[]> {
+    const chats: EntityRead[] = [];
     const pageSize = 500;
     let total: number;
     do {
       const page = await this.graph.listEntitiesWindow({
         schema: CHAT,
-        filterField: { edgeKind: "observed_in", observerExternalId, edgePath: filter.edgePath },
+        extras: true,
+        filterField: { edgeKind: "telegram.observed_in", observerExternalId, edgePath: filter.edgePath },
         filterOp: filter.op,
         filterEq: filter.eq,
         ...(filter.order === undefined ? {} : { order: filter.order }),
@@ -707,7 +749,7 @@ export class TelegramModule {
       // @tested-by: tst_module_telegram_read_004
       // Filter before Graph traversal: a dense chat's in_chat edges are not observer state.
       const edge = (await this.chatObservers(chatId)).find(({ link }) =>
-        link.kind === "observed_in" && link.from === observerId && link.to === chatId
+        link.kind === "telegram.observed_in" && link.from === observerId && link.to === chatId
       )?.link;
       if (edge !== undefined) out.set(chatId, edge);
     }
@@ -749,7 +791,9 @@ export class TelegramModule {
   }
 
   // ── chats.list ────────────────────────────────────────────────
-  private buildChatItem(entity: Entity, d: Data): TelegramChatListItem {
+  private buildChatItem(read: EntityRead, d: Data): TelegramChatListItem {
+    const { entity, extras } = read;
+    const choice = this.syncChoice(read);
     const avatar = str(d, "avatar_url") ?? str(d, "photo_url");
     const sourceAccounts = Array.isArray(d.sources)
       ? d.sources.flatMap((source) => {
@@ -773,8 +817,7 @@ export class TelegramModule {
       avatar_url: avatar,
       is_pinned: boolFlag(d, "is_pinned") ?? false,
       pin_order: num(d, "pin_order"),
-      indexed: entity.indexed,
-      syncEnabled: this.syncChoice(entity).syncEnabled,
+      extras: { ...extras, syncEnabled: choice.syncEnabled, syncRevision: choice.syncRevision },
     };
   }
 
@@ -815,6 +858,7 @@ export class TelegramModule {
     if (observed === null) {
       const page = await this.graph.listEntitiesWindow({
         schema: CHAT,
+        extras: true,
         order: [
           { field: { propertyPath: "is_pinned" }, desc: true },
           { field: { propertyPath: "pin_order" }, desc: false },
@@ -825,7 +869,7 @@ export class TelegramModule {
       });
       return {
         items: page.items.map((entity) => this.buildChatItem(entity, {
-          ...objectOf(entity.properties, "chat properties"),
+          ...objectOf(entity.entity.properties, "chat properties"),
         })),
         total: page.total,
         limit,
@@ -838,8 +882,9 @@ export class TelegramModule {
     const regularOffset = Math.max(0, offset - observed.total);
     const regular = await this.graph.listEntitiesWindow({
       schema: CHAT,
+        extras: true,
       filterField: {
-        edgeKind: "observed_in",
+        edgeKind: "telegram.observed_in",
         observerExternalId: observed.observerExternalId,
         edgePath: "is_pinned",
       },
@@ -851,13 +896,13 @@ export class TelegramModule {
     });
     const items = pinned.map((entity) =>
       this.buildChatItem(entity, {
-        ...objectOf(entity.properties, "chat properties"),
-        ...(observed.byChatId.get(entity.id) ?? {}),
+        ...objectOf(entity.entity.properties, "chat properties"),
+        ...(observed.byChatId.get(entity.entity.id) ?? {}),
       }),
     );
     items.push(...regular.items.map((entity) =>
       this.buildChatItem(entity, {
-        ...objectOf(entity.properties, "chat properties"),
+        ...objectOf(entity.entity.properties, "chat properties"),
         is_pinned: false,
         pin_order: null,
       })));
@@ -872,14 +917,14 @@ export class TelegramModule {
   async chatsGet(params: { entity_id: string } | { chat_id: number | string }): Promise<TelegramChatListItem> {
     if ("entity_id" in params && "chat_id" in params) throw new Error("Choose one chat get form");
     const entityId = "entity_id" in params ? params.entity_id : await this.chatEntityId(params.chat_id);
-    const entity = await this.graph.getEntity(entityId);
-    if (entity?.schemaId !== CHAT) {
+    const entity = await this.graph.getEntity(entityId, { extras: true });
+    if (entity?.entity.schemaId !== CHAT) {
       throw new Error(`${CHAT} ${entityId} not found`);
     }
-    const state = await this.observedStateFor([entity.id]);
+    const state = await this.observedStateFor([entity.entity.id]);
     return this.buildChatItem(entity, {
-      ...objectOf(entity.properties, "chat properties"),
-      ...(state.get(entity.id) ?? {}),
+      ...objectOf(entity.entity.properties, "chat properties"),
+      ...(state.get(entity.entity.id) ?? {}),
     });
   }
 
@@ -894,21 +939,22 @@ export class TelegramModule {
     const matches = await this.graph.searchEntitiesByName({
       query,
       schemaIds: [CHAT],
+      extras: true,
       limit: limit + offset,
     });
     const total = matches.length;
     const page = matches.slice(offset, offset + limit);
     const dicts = new Map<string, Data>();
     for (const e of page) {
-      dicts.set(e.id, objectOf(e.properties, "chat properties"));
+      dicts.set(e.entity.id, objectOf(e.entity.properties, "chat properties"));
     }
     // S4: the chat DICT rides the entity rows the search returned; the
     // operator's observed state composes on top.
-    const state = await this.observedStateFor(page.map((e) => e.id));
+    const state = await this.observedStateFor(page.map((e) => e.entity.id));
     const items: TelegramChatListItem[] = [];
     for (const e of page) {
-      const d = dicts.get(e.id);
-      if (d) items.push(this.buildChatItem(e, { ...d, ...(state.get(e.id) ?? {}) }));
+      const d = dicts.get(e.entity.id);
+      if (d) items.push(this.buildChatItem(e, { ...d, ...(state.get(e.entity.id) ?? {}) }));
     }
     return { items, total, limit, offset };
   }
@@ -1004,7 +1050,7 @@ export class TelegramModule {
     const authorIds = [...new Set(authorIdByMessage.values())];
     if (authorIds.length === 0) return out;
     const authors = await this.graph.getEntities(authorIds);
-    const nameById = new Map(authors.map((a) => [a.id, a.name]));
+    const nameById = new Map<string, string | null>(authors.map((a) => [a.id, a.name]));
     for (const [messageId, authorId] of authorIdByMessage) {
       out.set(messageId, nameById.get(authorId) ?? null);
     }
@@ -1066,7 +1112,7 @@ export class TelegramModule {
     );
     const endpointIds = [...reached.keys()];
     const endpoints = endpointIds.length === 0 ? [] : await this.graph.getEntities(endpointIds);
-    const endpointById = new Map(endpoints.map((e) => [e.id, e] as const));
+    const endpointById = new Map<string, Entity>(endpoints.map((e) => [e.id, e] as const));
     const linkedEntities: LinkedEntitySummary[] = [];
     for (const [id, reach] of reached) {
       const target = endpointById.get(id);
@@ -1086,31 +1132,6 @@ export class TelegramModule {
       createdAt: created,
       metadata: d,
     };
-  }
-
-  // ── chats.set_indexed (RPC-only, frontend toggle) ─────────────
-  @rpc("chats.set_indexed", {
-    description: "Mark a telegram chat indexed/unindexed (controls message indexing for search).",
-    params: {
-      type: "object",
-      properties: {
-        chat_id: { type: ["integer", "string"] },
-        is_indexed: { type: "boolean" },
-      },
-      required: ["chat_id", "is_indexed"],
-      additionalProperties: false,
-    },
-  })
-  async chatsSetIndexed(params: SetIndexedParams): Promise<{ status: string }> {
-    // S4: the chat resolves through its external id and the toggle is
-    // ONE dictionary merge — no record, no duplicate-row hazard.
-    const entityId = await this.graph.findByExternalId(chatExternalId(String(params.chat_id)));
-    if (!entityId) throw new Error(`chat ${String(params.chat_id)} not found`);
-    await this.graph.updateProperties({
-      entityId,
-      properties: { is_indexed: params.is_indexed },
-    });
-    return { status: "ok" };
   }
 
   // ── sync control (RPC) ────────────────────────────────────────
@@ -1149,7 +1170,7 @@ export class TelegramModule {
       if (targetId === null) throw new Error("Telegram identity has no stored direct chat");
       const chat = await this.graph.getEntity(targetId);
       if (chat === null || str(objectOf(chat.properties, "chat properties"), "type") !== "private") throw new Error("Telegram identity's stored chat is not a direct chat");
-      return { results: [await this.saveSyncEnabled({ id: targetId, syncEnabled: params.syncEnabled }, params.id)] };
+      return { results: [await this.saveSyncEnabled({ id: chat.id, syncEnabled: params.syncEnabled }, params.id)] };
     } catch (error) {
       return { results: [{ identityId: params.id, targetId, kind: "failed", message: error instanceof Error ? error.message : String(error) }] };
     }
@@ -1269,16 +1290,16 @@ export class TelegramModule {
     await this.graph.endLink(edge.id, validUntil);
   }
 
-  private async deletionChat(id: string): Promise<Entity> {
-    const stored = await this.graph.getEntityFull(id, { links: true });
+  private async deletionChat(id: string): Promise<EntityRead> {
+    const stored = await this.graph.getEntityFull(id, { links: true, extras: true });
     if (stored === null) throw new Error("Stored Telegram deletion target disappeared during admission");
-    if (stored.entity.schemaId === CHAT) return stored.entity;
+    if (stored.entity.schemaId === CHAT) return stored;
     const parents = stored.links.filter((link) => link.from === id && link.kind === "in_chat" && link.validUntil === null);
     if (parents.length !== 1) throw new Error("Stored Telegram deletion has no unique controlling chat");
     const parent = parents[0];
     if (parent === undefined) throw new Error("Stored Telegram deletion has no controlling chat");
-    const chat = await this.graph.getEntity(parent.to);
-    if (chat?.schemaId !== CHAT) throw new Error("Stored Telegram deletion points to a missing chat");
+    const chat = await this.graph.getEntity(parent.to, { extras: true });
+    if (chat?.entity.schemaId !== CHAT) throw new Error("Stored Telegram deletion points to a missing chat");
     return chat;
   }
 
@@ -1304,7 +1325,7 @@ export class TelegramModule {
           const source = this.sourceAccount(message);
           if (source.source !== envelope.sourceId || source.account !== envelope.accountId) continue;
           const chat = await this.deletionChat(message.id);
-          const type = str(objectOf(chat.properties, "chat properties"), "type");
+          const type = str(objectOf(chat.entity.properties, "chat properties"), "type");
           if (type === "supergroup" || type === "channel") continue;
           if (type !== "private" && type !== "group") throw new Error("Telegram deletion target has no known peer type");
           if (subject !== null) throw new Error("Telegram deletion has multiple stored targets in its account");
@@ -1315,7 +1336,7 @@ export class TelegramModule {
       deleteTargets.set(envelope.remoteId, subject.id);
       return subject.chatId;
     }
-    const id = await this.graph.findByExternalId(envelope.remoteId);
+    const id = await this.graph.findByExternalId(communicationMessageExternalId("telegram.message", envelope.accountId, envelope.remoteId));
     if (id === null) return null;
     deleteTargets.set(envelope.remoteId, id);
     return this.syncChoice(await this.deletionChat(id)).scopeId;
@@ -1469,11 +1490,11 @@ export class TelegramModule {
     });
     if (found.length === 0) return known;
     const entities = await this.graph.getEntities(found.map((item) => item.entityId));
-    const byId = new Map(entities.map((item) => [item.id, item]));
+    const byId = new Map<string, Entity>(entities.map((item) => [item.id, item]));
     for (const { chatId, entityId } of found) {
       const entity = byId.get(entityId);
       if (entity === undefined) throw new Error("Telegram chat lookup returned an incomplete result");
-      known.set(chatId, { entityId, details: objectOf(entity.properties, "chat properties"), indexed: entity.indexed });
+      known.set(chatId, { entityId, details: objectOf(entity.properties, "chat properties") });
     }
     return known;
   }
@@ -1616,7 +1637,7 @@ export class TelegramModule {
           links.push({
             fromKey: "self",
             toKey: remoteId,
-            kind: "observed_in",
+            kind: "telegram.observed_in",
             confidence: null,
             metadata,
             declaredBy: remoteId,
@@ -1627,20 +1648,10 @@ export class TelegramModule {
       }
       if (entities.length > 0) {
         const result = await this.graph.applyBatch({ entities, refs, links });
-        const createdIds: string[] = [];
-        for (const [remoteId, state] of stateByRemoteId) {
-          if (existingChats.has(state.chatId)) continue;
-          const id = result.ids[remoteId];
-          if (id === undefined) throw new Error("Telegram chat creation returned no entity ID");
-          createdIds.push(id);
-        }
-        const created = new Map((createdIds.length === 0 ? [] : await this.graph.getEntities(createdIds)).map((entity) => [entity.id, entity]));
         for (const [remoteId, state] of stateByRemoteId) {
           const entityId = result.ids[remoteId];
           if (entityId === undefined) throw new Error("Telegram chat write returned no entity ID");
-          const indexed = existingChats.get(state.chatId)?.indexed ?? created.get(entityId)?.indexed;
-          if (typeof indexed !== "boolean") throw new Error("Telegram chat has no indexed field");
-          ingestedByChatId.set(state.chatId, { entityId, details: state.details, indexed });
+          ingestedByChatId.set(state.chatId, { entityId, details: state.details });
         }
       }
       await Promise.resolve(); // yield between chunks so waiting RPCs get the connection
@@ -1702,10 +1713,44 @@ export class TelegramModule {
     // Edits and retries retain their external id. Resolve live identities once per page,
     // before writing them, so neither chat counts nor worker deltas grow twice.
     const liveExternalIds = [...new Set(page.filter((message) => message.isLive).map((message) => message.remoteId))];
-    const existingLive = liveExternalIds.length === 0 ? [] : await this.graph.findByExternalIds(liveExternalIds);
+    const existingLive = liveExternalIds.length === 0 ? [] : await this.graph.findByExternalIds(liveExternalIds.map((id) => {
+      const message = page.find((message) => message.remoteId === id);
+      if (message === undefined) throw new Error("Missing Telegram message");
+      return message.externalId;
+    }));
     if (existingLive.length !== liveExternalIds.length) throw new Error("Telegram live external id lookup returned an incomplete result");
     const newLiveMessages = new Set(liveExternalIds.filter((_, index) => existingLive[index] === null));
-    const fragment = buildFragment(page, identityKey);
+    const fragment = buildFragment(page, identityKey, chats);
+    if (identityKey && page.some((message) => message.env.userId && communicationOf(message.payload).length > 0)) {
+      const key = `acct:${identityKey}`;
+      const current = fragment.entities.get(key);
+      fragment.refs.delete(key);
+      fragment.entities.set(key, current ?? { key, schemaId: TELEGRAM_ACCOUNT, name: null, idx: null, date: null, externalId: accountExternalId(identityKey), properties: { telegram_user_id: Number(identityKey), is_self: true } });
+      // Account replicas are shared. A peer observation must not overwrite a
+      // connected operator's own Source anchor or erase its is_self flag.
+      const accounts = [...fragment.entities.values()].filter((item) => item.schemaId === TELEGRAM_ACCOUNT);
+      const externalIds = accounts.map((item) => {
+        if (item.externalId === null) throw new Error("Telegram account requires a provider identity");
+        return item.externalId;
+      });
+      const ids = await this.graph.findByExternalIds(externalIds);
+      if (ids.length !== accounts.length) throw new Error("Incomplete Telegram account lookup");
+      const stored = new Map<string, Entity>((await this.graph.getEntities(ids.filter((id): id is string => id !== null))).map((item) => [item.id, item]));
+      for (const [index, account] of accounts.entries()) {
+        const id = ids[index];
+        if (id === null) continue;
+        const saved = id === undefined ? undefined : stored.get(id);
+        if (saved?.schemaId !== TELEGRAM_ACCOUNT) throw new Error("Telegram account lookup returned a missing or invalid identity");
+        const properties = objectOf(saved.properties, "account properties");
+        if (properties.is_self === true && account.key !== key) {
+          fragment.entities.delete(account.key);
+          fragment.refs.set(account.key, { key: account.key, externalId: account.externalId });
+        } else {
+          fragment.entities.set(account.key, { ...account, name: account.name === null || account.name === "" ? saved.name : account.name,
+            properties: { ...properties, ...objectOf(account.properties, "account properties") } });
+        }
+      }
+    }
     await this.stateLiveMessages(page, chats, fragment, identityKey, generation, statement, newLiveMessages);
 
     const result = await this.graph.applyBatch({
@@ -1752,7 +1797,7 @@ export class TelegramModule {
       fragment.links.set(`self observed_in chat:${chatId}`, {
         fromKey: "self",
         toKey: `chat:${chatId}`,
-        kind: "observed_in",
+        kind: "telegram.observed_in",
         confidence: null,
         metadata: { ...held.metadata, sync_total: held.stated.total + live },
         declaredBy: `chat:${chatId}`,
@@ -1779,9 +1824,8 @@ export class TelegramModule {
   private async ingestDelete(envelope: SyncEnvelope, resolvedId: string | undefined): Promise<void> {
     const remoteId = envelope.remoteId;
     if (!remoteId) return;
-    // S4: messages and chats resolve by EXTERNAL ID — their remoteId IS the
-    // external id.
-    const entityId = resolvedId ?? await this.graph.findByExternalId(remoteId);
+    // Messages are account-scoped; shared chat anchors retain their provider ID.
+    const entityId = resolvedId ?? await this.graph.findByExternalId(remoteId.startsWith("tg:chat:") ? remoteId : communicationMessageExternalId("telegram.message", envelope.accountId, remoteId));
     if (entityId) await this.graph.deleteEntity(entityId);
   }
 
@@ -1874,7 +1918,10 @@ export class TelegramModule {
   ): Promise<Record<string, unknown>> {
     const payload: Data = { action: "send_message", chat_id: chatId, text };
     if (replyTo !== undefined) payload.reply_to_message_id = replyTo;
-    const result = await this.graph.sourceCommand(payload, accountId);
+    const { accounts } = await this.graph.syncState("status");
+    const selected = accountId === undefined ? (accounts.length === 1 ? accounts[0] : undefined) : accounts.find((account) => account.accountId === accountId);
+    if (selected === undefined) throw new Error("Specify account_id: Telegram needs a connected account");
+    const result = await this.graph.sourceCommand(payload, selected.accountId);
     // The message is DELIVERED past this point. Local ingest + entity lookup are
     // best-effort enrichment: a failure here must NOT propagate as a send failure,
     // else a delivered message is reported "failed" (batch_send / single send) and
@@ -1883,11 +1930,15 @@ export class TelegramModule {
     try {
       const chatEntityId = await this.graph.findByExternalId(chatExternalId(String(chatId)));
       if (chatEntityId === null) return result;
-      const chat = await this.graph.getEntity(chatEntityId);
+      const chat = await this.graph.getEntity(chatEntityId, { extras: true });
       if (chat === null || !this.syncChoice(chat).syncEnabled) return result;
       const messageId = result.message_id;
       if (typeof messageId !== "number" || !Number.isSafeInteger(messageId) || messageId <= 0) throw new Error("Telegram send response has no message ID");
       const remoteId = `tg:msg:${String(chatId)}:${String(messageId)}`;
+      const operator = await this.operatorAccount(selected.accountId);
+      if (operator === null) throw new Error("Telegram account identity has not been synchronized yet");
+      const operatorId = num(objectOf(operator.properties, "operator properties"), "telegram_user_id");
+      if (operatorId === null) throw new Error("Telegram operator has no provider identity");
       const sentPayload: Data = {
         message_id: messageId,
         chat_id: chatId,
@@ -1895,17 +1946,18 @@ export class TelegramModule {
         date: new Date().toISOString(),
         is_outgoing: true,
         sender_name: "You",
+        communication: [{ kind: "sent", occurredAt: null }],
       };
       await this.ingestMessageBatch(
-        [{ env: this.syntheticEnvelope(remoteId, sentPayload, accountId), payload: sentPayload }],
+        [{ env: this.syntheticEnvelope(remoteId, sentPayload, selected.accountId), payload: sentPayload }],
         [],
-        undefined,
+        String(operatorId),
         new Map(),
         null,
         emptyStatement(),
-        new Map([[String(chatId), { entityId: chat.id, details: objectOf(chat.properties, "chat properties"), indexed: chat.indexed }]]),
+        new Map([[String(chatId), { entityId: chat.entity.id, details: objectOf(chat.entity.properties, "chat properties") }]]),
       );
-      const entityId = await this.graph.findByExternalId(remoteId);
+      const entityId = await this.graph.findByExternalId(communicationMessageExternalId("telegram.message", selected.accountId, remoteId));
       return entityId ? { ...result, id: entityId } : result;
     } catch {
       return result;
@@ -1980,11 +2032,11 @@ export class TelegramModule {
   // Build a SyncEnvelope for re-ingesting a message produced by a source
   // command (send result / backfill batch). userId is empty here — the graph
   // ops are owner-scoped by the dispatch plugin context, not this field.
-  private syntheticEnvelope(remoteId: string, payload: Data, accountId: string | undefined): SyncEnvelope {
+  private syntheticEnvelope(remoteId: string, payload: Data, accountId: string): SyncEnvelope {
     return {
       sourceId: "telegram",
       surface: "telegram",
-      accountId: accountId ?? "default",
+      accountId,
       userId: "",
       kind: "live",
       remoteId,

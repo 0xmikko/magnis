@@ -24,7 +24,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import { entity, entityId, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { CompaniesModule } from "../service.ts";
 import { COMPANY } from "../../schema.ts";
 import type { CompanyCanonical } from "../../types.ts";
@@ -80,7 +80,7 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
 
     const listed = await mod.list({ limit: 50, offset: 0 });
     expect(listed.total).toBe(2);
-    expect(listed.items.map((i) => i.id)).toEqual(["a", "z"]); // window idx order preserved
+    expect(listed.items.map((i) => i.id)).toEqual([entityId("a"), entityId("z")]); // window idx order preserved
     const first = listed.items[0];
     if (first === undefined) throw new Error("F1: missing first item");
     expect(first.name).toBe("Acme");
@@ -162,10 +162,11 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
 
     expect(view.linkedEntities).toEqual([
       {
-        id: "contact-1",
+        id: entityId("contact-1"),
         schemaId: "contacts.person",
         name: "Mitchell Amador",
-        linkKind: "~works_at",
+        linkKind: "works_at",
+        direction: "in",
         createdAt: "2026-01-01T00:00:00Z",
         origin: "canonical",
         confidence: null,
@@ -258,10 +259,11 @@ describe("tst_cat_entity_one_type_008 — the companies detail answer is camelCa
     expect(view).not.toHaveProperty("header_rows");
     expect(view["linkedEntities"]).toEqual([
       {
-        id: "contact-1",
+        id: entityId("contact-1"),
         schemaId: "contacts.person",
         name: "Mitchell Amador",
-        linkKind: "~works_at",
+        linkKind: "works_at",
+        direction: "in",
         createdAt: "2026-01-01T00:00:00Z",
         origin: "canonical",
         confidence: null,

@@ -27,9 +27,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GraphService } from "@magnis/plugin-sdk";
-import type { AddLinkParams, BatchEntityInput, Entity, GraphBatchInput, JsonObject, Link, SyncEnvelope } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import type { BatchEntityInput, PersistentEntity, PersistentEntityId, GraphBatchInput, JsonObject, Link, SyncEnvelope } from "@magnis/sdk";
+import { entity, entityId, link, mockGraph, mountModule, sourceEnvelope, type MockGraph, type GraphOverrides } from "@magnis/testkit/module";
 import { AddressbookModule } from "../service.ts";
+
+type AddLinkInput = Parameters<GraphService["addLink"]>[0];
 
 const T0 = "2026-03-14T09:00:00.000Z";
 const T1 = "2026-03-15T09:00:00.000Z";
@@ -44,7 +46,7 @@ afterEach(() => {
 });
 
 interface WorldNode {
-  id: string;
+  id: PersistentEntityId;
   schemaId: string;
   name: string;
   externalId?: string;
@@ -69,7 +71,7 @@ interface World {
   nodes: Map<string, WorldNode>;
   links: WorldLink[];
   /** Every addLink call, as the module made it. */
-  added: AddLinkParams[];
+  added: AddLinkInput[];
   minted: { schemaId: string; name: string }[];
 }
 
@@ -86,7 +88,7 @@ function addressBookWorld(seed: {
 } = {}): World {
   const nodes = new Map<string, WorldNode>((seed.nodes ?? []).map((node) => [node.id, { ...node, archived: false }]));
   const links: WorldLink[] = (seed.links ?? []).map((held, index) => ({ ...held, id: `seed-${String(index)}` }));
-  const added: AddLinkParams[] = [];
+  const added: AddLinkInput[] = [];
   const minted: { schemaId: string; name: string }[] = [];
   let hubSeq = 0;
   const isLive = (id: string): boolean => nodes.get(id)?.archived === false;
@@ -97,17 +99,17 @@ function addressBookWorld(seed: {
   };
   const byExternalId = (externalId: string): WorldNode | undefined =>
     [...nodes.values()].find((node) => node.externalId === externalId && !node.archived);
-  const raw = (node: WorldNode): Entity => entity(node.id, node.name, {
-    schemaId: node.schemaId, indexed: true, properties: node.properties,
+  const raw = (node: WorldNode): PersistentEntity => entity(node.id, node.name, {
+    schemaId: node.schemaId, properties: node.properties,
     source: { source: "google", account: "acct-1", externalId: node.externalId ?? node.id },
   });
-  const overrides: Partial<GraphService> = {
+  const overrides: GraphOverrides = {
     applyBatch: (batch: GraphBatchInput) => {
-      const ids: Record<string, string> = {};
+      const ids: Record<string, PersistentEntityId> = {};
       let created = 0;
       for (const item of batch.entities as readonly BatchEntityInput[]) {
         const found = [...nodes.values()].find((node) => node.externalId !== undefined && node.externalId === item.externalId);
-        const id = found?.id ?? (item.schemaId === "email.address" ? `addr-${item.name ?? ""}` : `id-${item.key}`);
+        const id = found?.id ?? entityId(item.schemaId === "email.address" ? `addr-${item.name ?? ""}` : `id-${item.key}`);
         if (found === undefined) created += 1;
         nodes.set(id, {
           id, schemaId: item.schemaId, name: item.name ?? "", ...(item.externalId === null ? {} : { externalId: item.externalId }),
@@ -132,12 +134,12 @@ function addressBookWorld(seed: {
     getEntity: (id: string) => Promise.resolve(isLive(id) ? raw(live(id)) : null),
     getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => raw(live(id)))),
     createEntity: (input) => {
-      const id = `hub-${String(hubSeq++)}`;
+      const id = entityId(`hub-${String(hubSeq++)}`);
       nodes.set(id, { id, schemaId: input.schemaId, name: input.name, properties: {}, archived: false });
       minted.push({ schemaId: input.schemaId, name: input.name });
       return Promise.resolve(raw(live(id)));
     },
-    addLink: (params: AddLinkParams) => {
+    addLink: (params: AddLinkInput) => {
       const unknown = Object.keys(params).filter((key) => !LINK_FIELDS.includes(key));
       if (unknown.length > 0) throw new Error(`link: unknown fields ${unknown.join(", ")}`);
       if (params.validFrom !== undefined && params.validUntil !== undefined && params.validUntil < params.validFrom) {
@@ -197,21 +199,21 @@ function mountWorld(world: World): AddressbookModule {
   }).module;
 }
 
-const person = (id: string, name = id): Omit<WorldNode, "archived"> => ({ id, schemaId: "contacts.person", name, properties: {} });
+const person = (id: string, name = id): Omit<WorldNode, "archived"> => ({ id: entityId(id), schemaId: "contacts.person", name, properties: {} });
 const address = (value: string): Omit<WorldNode, "archived"> => ({
-  id: `addr-${value}`, schemaId: "email.address", name: value, externalId: `email:address:${value}`, properties: { address: value },
+  id: entityId(`addr-${value}`), schemaId: "email.address", name: value, externalId: `email:address:${value}`, properties: { address: value },
 });
 /** A link nobody marked: made by hand, by email or by another module. */
 const heldBy = (from: string, to: string): Omit<WorldLink, "id"> => ({
-  from, to, kind: "identity", validFrom: null, validUntil: null, metadata: null,
+  from: entityId(from), to: entityId(to), kind: "identity", validFrom: null, validUntil: null, metadata: null,
 });
 /** The link the address book opens at sync time `at`. */
-const opened = (from: string, to: string, at: string): AddLinkParams => ({
-  from, to, kind: "identity", metadata: { producer: "addressbook" }, validFrom: at,
+const opened = (from: string, to: string, at: string): AddLinkInput => ({
+  from: entityId(from), to: entityId(to), kind: "identity", metadata: { producer: "addressbook" }, validFrom: at,
 });
 const periodsOf = (world: World, from: string, to: string): { validFrom: string | null; validUntil: string | null }[] =>
   world.links
-    .filter((held) => held.from === from && held.to === to)
+    .filter((held) => held.from === entityId(from) && held.to === entityId(to))
     .map(({ validFrom, validUntil }) => ({ validFrom, validUntil }));
 
 const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
@@ -303,7 +305,7 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     expect(batch.entities).toContainEqual(expect.objectContaining({ externalId: "email:address:new@example.com", syncEnabled: false }));
     expect(batch.entities).not.toContainEqual(expect.objectContaining({ externalId: "email:address:old@example.com" }));
     expect(batch.refs).toEqual([{ key: "addr:old@example.com", externalId: "email:address:old@example.com" }]);
-    expect(world.nodes.get("addr-old@example.com")?.syncEnabled).toBe(false);
+    expect(world.nodes.get(entityId("addr-old@example.com"))?.syncEnabled).toBe(false);
   });
 
   it("one envelope → ONE card node: by external id, dictionary as last synced, zero person writes in the batch", async () => {
@@ -368,7 +370,7 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
       opened("hub-B", "id-gpeople:c1", T0),
     ]);
     // Nothing merges: the address nobody holds stays unattached.
-    expect(world.links.filter((held) => held.to === "addr-cat@example.com")).toEqual([]);
+    expect(world.links.filter((held) => held.to === entityId("addr-cat@example.com"))).toEqual([]);
   });
 
   // The legacy-fleet probe retired with the archive it read: a pre-anchor hub
@@ -390,7 +392,7 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     const world = addressBookWorld({
       nodes: [
         person("hub-X"), address("mikhail@example.com"),
-        { id: "id-gpeople:abc123", schemaId: "addressbook.card", name: "Mikhail Lazarev", externalId: "gpeople:abc123", properties: {} },
+        { id: entityId("id-gpeople:abc123"), schemaId: "addressbook.card", name: "Mikhail Lazarev", externalId: "gpeople:abc123", properties: {} },
       ],
       links: [heldBy("hub-X", "id-gpeople:abc123"), heldBy("hub-X", "addr-mikhail@example.com")],
     });
@@ -453,15 +455,15 @@ describe("Google contact removal", () => {
     const mod = mountWorld(world);
     await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ payload: contactPayload() })] });
     await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remoteId: "gpeople:abc123" })] });
-    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("id-gpeople:abc123");
-    expect(world.nodes.get("id-gpeople:abc123")?.archived).toBe(true);
-    expect(world.nodes.get("hub-0")?.archived).toBe(false);
+    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith(entityId("id-gpeople:abc123"));
+    expect(world.nodes.get(entityId("id-gpeople:abc123"))?.archived).toBe(true);
+    expect(world.nodes.get(entityId("hub-0"))?.archived).toBe(false);
     expect(world.minted).toHaveLength(1);
   });
 
   it("reconciles only unseen Google cards after a complete pass", async () => {
     const stored = (id: string, account_id: string, sync_pass: string): Omit<WorldNode, "archived"> => ({
-      id, schemaId: "addressbook.card", name: id, externalId: `gpeople:${id}`, properties: { source_id: "google", account_id, sync_pass },
+      id: entityId(id), schemaId: "addressbook.card", name: id, externalId: `gpeople:${id}`, properties: { source_id: "google", account_id, sync_pass },
     });
     const world = addressBookWorld({
       nodes: [stored("old", "acct-1", "initial:r:1"), stored("seen", "acct-1", "initial:r:2"), stored("other", "acct-2", "initial:r:1")],
@@ -470,7 +472,7 @@ describe("Google contact removal", () => {
     expect(await mod.onSyncComplete(complete("initial:r:2"))).toEqual({
       departed: [], plan: { "addressbook.card": { total: 0, skipped: 0 } },
     });
-    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("old");
+    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith(entityId("old"));
   });
 });
 
@@ -490,7 +492,7 @@ describe("People Poll progress", () => {
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [contact] })).plan?.["addressbook.card"]).toEqual({ total: 0, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["addressbook.card"]).toEqual({ total: -1, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["addressbook.card"]).toEqual({ total: 0, skipped: 0 });
-    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("id-gpeople:abc123");
+    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith(entityId("id-gpeople:abc123"));
   });
 });
 
@@ -575,7 +577,7 @@ describe("every sync re-checks the card", () => {
 
     vi.setSystemTime(new Date(T1));
     await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remoteId: "gpeople:c1" })] });
-    expect(world.nodes.get("id-gpeople:c1")?.archived).toBe(true);
+    expect(world.nodes.get(entityId("id-gpeople:c1"))?.archived).toBe(true);
     expect(periodsOf(world, "hub-0", "addr-ann@example.com")).toEqual([{ validFrom: T0, validUntil: T1 }]);
     expect(periodsOf(world, "hub-0", "addr-bob@example.com")).toEqual([{ validFrom: T0, validUntil: null }]);
     expect(periodsOf(world, "hub-0", "id-gpeople:c1")).toEqual([{ validFrom: T0, validUntil: null }]);
@@ -583,10 +585,10 @@ describe("every sync re-checks the card", () => {
     // The other way a contact leaves: a full pass that never saw it.
     vi.setSystemTime(new Date(T2));
     await mod.onSyncComplete(complete("initial:r:2"));
-    expect(world.nodes.get("id-gpeople:c2")?.archived).toBe(true);
+    expect(world.nodes.get(entityId("id-gpeople:c2"))?.archived).toBe(true);
     expect(periodsOf(world, "hub-0", "addr-bob@example.com")).toEqual([{ validFrom: T0, validUntil: T2 }]);
-    expect(world.graph.spies.deleteEntity?.mock.calls).toEqual([["id-gpeople:c1"], ["id-gpeople:c2"]]);
-    expect(world.nodes.get("hub-0")?.archived).toBe(false);
+    expect(world.graph.spies.deleteEntity?.mock.calls).toEqual([[entityId("id-gpeople:c1")], [entityId("id-gpeople:c2")]]);
+    expect(world.nodes.get(entityId("hub-0"))?.archived).toBe(false);
   });
 
   /**

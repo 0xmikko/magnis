@@ -35,6 +35,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@magnis/sdk/core/communication": resolve(__dirname, "./packages/host-stubs/types/packages/sdk/core/communication.js"),
+      "@magnis/sdk": resolve(__dirname, "./packages/host-stubs/types/packages/sdk/index.js"),
       "@magnis/plugin-sdk": resolve(__dirname, "./packages/plugin-sdk/index.ts"),
       "@magnis/declare/derive": resolve(__dirname, "./packages/declare/derive.ts"),
       "@magnis/declare": resolve(__dirname, "./packages/declare/index.ts"),

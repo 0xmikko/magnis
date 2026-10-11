@@ -33,6 +33,8 @@ The first users are small teams running expensive asynchronous processes with ou
 - **Everything can run fully local, including the models** — a desktop app with embedded Postgres, or your own server; per-user isolation, with access control modeled in the graph itself (ACL).
 - **The plugin system is open; the core is closed** — any external system connects through the same typed contract every built-in integration uses.
 
+Developer reference: **[Typed knowledge graph contracts](docs/vision.md)** — TypeScript interfaces with behavior and edge cases for entities, relationships, identity, extraction, modules and synchronization. The **[migration plan](docs/plans/2026-10-06-entity-docs.md)** describes adoption across the app and plugin catalog.
+
 Full architecture: **[docs/architecture.md](docs/architecture.md)**. Deep references: [the graph](docs/graph.md) (anatomy, indexes, vector pipeline, speculative overlay) · [engines](docs/engines.md) (model layer, sessions, metering) · [plugins](docs/plugins/README.md) (authoring) · [desktop runtime artifacts](docs/runtime-artifact-contract.md) (immutable closed-runtime delivery) · [evals](evals/README.md) (methodology and results).
 
 ## Measured memory performance

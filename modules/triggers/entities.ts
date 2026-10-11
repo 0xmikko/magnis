@@ -24,7 +24,7 @@ export const trigger = entity(
     name: z.string(),
     gate_prompt: z.string(),
     action_prompt: z.string(),
-    status: z.enum(["active", "paused", "disabled", "expired"]),
+    status: z.enum(["active", "stopped", "paused", "disabled", "expired"]),
     event_kinds: z.array(z.string()),
     schema_filter: z.string().optional(),
     expires_at: moment().optional(),

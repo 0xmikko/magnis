@@ -1,9 +1,9 @@
 // Shared schema→type maps for the email plugin (single source of truth for
 // module/service.ts + ui/). Record schema_id → payload type; canonical key → value.
-import type { LinkedEntitySummary, Syncable } from "@magnis/sdk";
+import type { EntityExtras, LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 /** One stored message record — the provider's dictionary MINUS what edges
- * carry: the recipients are `sent_to`, the sender's address is `authored_by`,
+ * carry: the recipients are `sent_to`, the sender's address is `received_from`,
  * the attachments are `file.attachment`. `entities.ts` declares exactly this
  * and the build proves the two are one type. */
 export interface EmailMessageDetails {
@@ -23,6 +23,14 @@ export interface EmailMessageDetails {
   is_important?: boolean;
   has_attachments?: boolean;
   thread_id?: string;
+}
+
+export interface EmailMailboxDetails {
+  address: string | null;
+}
+
+export interface EmailThreadDetails {
+  threadId: string;
 }
 
 export interface EmailAddressDetails {
@@ -46,6 +54,7 @@ export interface EmailCanonical {
 // for module/ and ui/. The linked summaries inside them are the SDK's.
 
 export interface MessageListItem {
+  extras: EntityExtras;
   id: string;
   schemaId: string;
   sender: string | null;
@@ -58,7 +67,8 @@ export interface MessageListItem {
 }
 
 export interface MessageDetailView {
-  senderSync: Pick<Syncable, "id" | "syncEnabled" | "syncRevision"> | null;
+  extras: EntityExtras;
+  senderSync: (Syncable & { id: string }) | null;
   id: string;
   schemaId: string;
   sender: string | null;
@@ -87,6 +97,7 @@ export interface BatchParams {
 }
 
 export interface SendParams {
+  account_id?: string;
   to: string;
   subject: string;
   body_text: string;
@@ -94,12 +105,14 @@ export interface SendParams {
 }
 
 export interface ReplyParams {
+  account_id?: string;
   email_id: string;
   body_text: string;
   attachment_ids?: string[];
 }
 
 export interface BatchSendParams {
+  account_id?: string;
   messages: SendParams[];
   excluded_indices?: number[];
 }

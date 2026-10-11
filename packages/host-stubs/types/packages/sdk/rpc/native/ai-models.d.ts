@@ -1,5 +1,6 @@
 import { z } from "zod";
 export declare const aiModelLanguageDirectoryContract: import("../contract.js").RpcContract<"ai_models.directory.language.list", z.ZodObject<{}, z.core.$strip>, z.ZodArray<z.ZodObject<{
+    private: z.ZodBoolean;
     id: z.ZodString;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -57,6 +58,7 @@ export declare const aiModelLanguageDirectoryContract: import("../contract.js").
     providerConnectionId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strict>>, "required">;
 export declare const aiModelEmbeddingDirectoryContract: import("../contract.js").RpcContract<"ai_models.directory.embedding.list", z.ZodObject<{}, z.core.$strip>, z.ZodArray<z.ZodObject<{
+    private: z.ZodBoolean;
     id: z.ZodString;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -161,6 +163,7 @@ export declare const aiModelsContracts: {
         accountId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     }, z.core.$strict>, "required">;
     readonly "ai_models.directory.language.list": import("../contract.js").RpcContract<"ai_models.directory.language.list", z.ZodObject<{}, z.core.$strip>, z.ZodArray<z.ZodObject<{
+        private: z.ZodBoolean;
         id: z.ZodString;
         displayName: z.ZodString;
         dataBoundary: z.ZodEnum<{
@@ -218,6 +221,7 @@ export declare const aiModelsContracts: {
         providerConnectionId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     }, z.core.$strict>>, "required">;
     readonly "ai_models.directory.embedding.list": import("../contract.js").RpcContract<"ai_models.directory.embedding.list", z.ZodObject<{}, z.core.$strip>, z.ZodArray<z.ZodObject<{
+        private: z.ZodBoolean;
         id: z.ZodString;
         displayName: z.ZodString;
         dataBoundary: z.ZodEnum<{

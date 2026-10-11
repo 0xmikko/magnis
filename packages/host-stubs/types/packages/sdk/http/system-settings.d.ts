@@ -710,6 +710,96 @@ export declare const materializeAiModelContract: import("./contract.js").HttpCon
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
+    price: z.ZodNullable<z.ZodObject<{
+        inputPerMtokMicros: z.ZodNumber;
+        outputPerMtokMicros: z.ZodNumber;
+        cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+    }, z.core.$strip>>;
+    id: z.ZodString;
+    configurationRevision: z.ZodString;
+    enabled: z.ZodBoolean;
+    available: z.ZodOptional<z.ZodBoolean>;
+    unavailableReason: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, z.core.$strip>>;
+export declare const setAiModelPrivateContract: import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/runtime/models/:modelId/private", z.ZodObject<{
+    modelId: z.ZodString;
+    private: z.ZodBoolean;
+}, z.core.$strict>, z.ZodObject<{
+    reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        state: z.ZodLiteral<"none">;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"unknown">;
+        reason: z.ZodEnum<{
+            metadata_unavailable: "metadata_unavailable";
+            unverified_model: "unverified_model";
+            adapter_not_supported: "adapter_not_supported";
+        }>;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"ready">;
+        controls: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+            kind: z.ZodLiteral<"effort">;
+            options: z.ZodArray<z.ZodObject<{
+                id: z.ZodString;
+                label: z.ZodString;
+            }, z.core.$strict>>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"thinking">;
+            options: z.ZodArray<z.ZodBoolean>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"budget">;
+            unit: z.ZodLiteral<"tokens">;
+            min: z.ZodNumber;
+            max: z.ZodNumber;
+            step: z.ZodNumber;
+        }, z.core.$strict>], "kind">>;
+        defaultValues: z.ZodNullable<z.ZodObject<{
+            effort: z.ZodOptional<z.ZodString>;
+            thinking: z.ZodOptional<z.ZodBoolean>;
+            budgetTokens: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strict>>;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>], "state">>;
+    capability: z.ZodEnum<{
+        language: "language";
+        embedding: "embedding";
+    }>;
+    displayName: z.ZodString;
+    dataBoundary: z.ZodEnum<{
+        device_only: "device_only";
+        cloud_allowed: "cloud_allowed";
+    }>;
+    contextTokens: z.ZodNullable<z.ZodNumber>;
+    providerConnectionId: z.ZodNullable<z.ZodString>;
+    dimensions: z.ZodNullable<z.ZodNumber>;
+    normalization: z.ZodNullable<z.ZodEnum<{
+        none: "none";
+        l2: "l2";
+    }>>;
+    adapterId: z.ZodEnum<{
+        anthropic: "anthropic";
+        openai: "openai";
+        "openai-compatible": "openai-compatible";
+        ollama: "ollama";
+        "local-fastembed": "local-fastembed";
+    }>;
+    physicalModelId: z.ZodString;
+    languageCapabilities: z.ZodNullable<z.ZodObject<{
+        tools: z.ZodBoolean;
+        vision: z.ZodBoolean;
+        reasoning: z.ZodBoolean;
+        structuredOutput: z.ZodBoolean;
+    }, z.core.$strip>>;
+    artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;
@@ -798,6 +888,7 @@ export declare const setAiModelEnabledContract: import("./contract.js").HttpCont
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;
@@ -966,6 +1057,7 @@ export declare const listConfiguredAiModelsContract: import("./contract.js").Htt
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;
@@ -1616,6 +1708,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;
@@ -2083,6 +2176,95 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
+    price: z.ZodNullable<z.ZodObject<{
+        inputPerMtokMicros: z.ZodNumber;
+        outputPerMtokMicros: z.ZodNumber;
+        cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+    }, z.core.$strip>>;
+    id: z.ZodString;
+    configurationRevision: z.ZodString;
+    enabled: z.ZodBoolean;
+    available: z.ZodOptional<z.ZodBoolean>;
+    unavailableReason: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, z.core.$strip>>, import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/runtime/models/:modelId/private", z.ZodObject<{
+    modelId: z.ZodString;
+    private: z.ZodBoolean;
+}, z.core.$strict>, z.ZodObject<{
+    reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        state: z.ZodLiteral<"none">;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"unknown">;
+        reason: z.ZodEnum<{
+            metadata_unavailable: "metadata_unavailable";
+            unverified_model: "unverified_model";
+            adapter_not_supported: "adapter_not_supported";
+        }>;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"ready">;
+        controls: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+            kind: z.ZodLiteral<"effort">;
+            options: z.ZodArray<z.ZodObject<{
+                id: z.ZodString;
+                label: z.ZodString;
+            }, z.core.$strict>>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"thinking">;
+            options: z.ZodArray<z.ZodBoolean>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"budget">;
+            unit: z.ZodLiteral<"tokens">;
+            min: z.ZodNumber;
+            max: z.ZodNumber;
+            step: z.ZodNumber;
+        }, z.core.$strict>], "kind">>;
+        defaultValues: z.ZodNullable<z.ZodObject<{
+            effort: z.ZodOptional<z.ZodString>;
+            thinking: z.ZodOptional<z.ZodBoolean>;
+            budgetTokens: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strict>>;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>], "state">>;
+    capability: z.ZodEnum<{
+        language: "language";
+        embedding: "embedding";
+    }>;
+    displayName: z.ZodString;
+    dataBoundary: z.ZodEnum<{
+        device_only: "device_only";
+        cloud_allowed: "cloud_allowed";
+    }>;
+    contextTokens: z.ZodNullable<z.ZodNumber>;
+    providerConnectionId: z.ZodNullable<z.ZodString>;
+    dimensions: z.ZodNullable<z.ZodNumber>;
+    normalization: z.ZodNullable<z.ZodEnum<{
+        none: "none";
+        l2: "l2";
+    }>>;
+    adapterId: z.ZodEnum<{
+        anthropic: "anthropic";
+        openai: "openai";
+        "openai-compatible": "openai-compatible";
+        ollama: "ollama";
+        "local-fastembed": "local-fastembed";
+    }>;
+    physicalModelId: z.ZodString;
+    languageCapabilities: z.ZodNullable<z.ZodObject<{
+        tools: z.ZodBoolean;
+        vision: z.ZodBoolean;
+        reasoning: z.ZodBoolean;
+        structuredOutput: z.ZodBoolean;
+    }, z.core.$strip>>;
+    artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;
@@ -2170,6 +2352,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BatchEntityInput, GraphBatchInput, JsonObject } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import { entityId, entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { AddressbookModule } from "./module/service.ts";
 import { card } from "./entities.ts";
@@ -32,7 +32,7 @@ async function cardsWritten(): Promise<BatchEntityInput[]> {
     applyBatch: (frag) => {
       batches.push(frag);
       return Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,

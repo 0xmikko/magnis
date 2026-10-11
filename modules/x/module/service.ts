@@ -17,6 +17,8 @@ import type {
   BatchLink,
   BatchRef,
   Entity,
+  EntityRead,
+  EntityExtras,
   JsonObject,
   PaginatedResponse,
   SetSyncEnabledParams,
@@ -94,10 +96,10 @@ function sourceExternalId(row: Entity): string | null {
   return row.origin === "canonical" ? row.source.externalId : null;
 }
 
-function savedProfile(row: Entity): Entity & Syncable {
-  if (row.schemaId !== PROFILE || !("syncEnabled" in row) || typeof row.syncEnabled !== "boolean"
-    || !("syncRevision" in row) || typeof row.syncRevision !== "string" || !/^\d+$/.test(row.syncRevision)) throw new Error("X profile has no saved synchronization choice");
-  return { ...row, syncEnabled: row.syncEnabled, syncRevision: row.syncRevision };
+function savedProfile(read: EntityRead): EntityRead & { extras: EntityExtras & Syncable } {
+  const { entity, extras } = read;
+  if (entity.schemaId !== PROFILE || extras.syncEnabled === null) throw new Error("X profile has no saved synchronization choice");
+  return { entity, extras: { ...extras, syncEnabled: extras.syncEnabled, syncRevision: extras.syncRevision } };
 }
 
 function profileFromEntity(row: Entity): ResolvedXProfile {
@@ -200,7 +202,7 @@ export class XModule {
     for (const entry of entries) {
       try {
         const linked = links.filter((link) => link.kind === IDENTITY && link.from === entry.contactId && link.validUntil === null)
-          .map((link) => saved.get(link.to)).filter((row): row is Entity => row !== undefined && normalizedHandle((row.properties as JsonObject).handle) === entry.handle);
+          .map((link) => saved.get(link.to)).filter((row) => row !== undefined).filter((row) => normalizedHandle((row.properties as JsonObject).handle) === entry.handle);
         if (linked.length > 1) throw new Error("Legacy X entry has multiple saved profile identities");
         const held = linked[0];
         const profile = held === undefined ? await resolve(entry.handle) : profileFromEntity(held);
@@ -297,12 +299,12 @@ export class XModule {
     const status = await this.migrateSyncChoices(params.accountId);
     if (!status.complete) throw new Error(`X synchronization migration is incomplete: ${status.issues.map((issue) => issue.message).join("; ")}`);
     const rows = await this.profileRows();
-    const profiles = rows.length === 0 ? [] : await this.graph.getEntities(rows.map((row) => row.id));
+    const profiles = rows.length === 0 ? [] : await this.graph.getEntities(rows.map((row) => row.id), { extras: true });
     if (profiles.length !== rows.length) throw new Error("X profile selection is incomplete");
     return { surface: "x", choices: profiles.map((row) => {
       const saved = savedProfile(row);
-      const profile = profileFromEntity(saved);
-      return { id: row.id, scopeId: profile.providerId, handle: normalizedHandle(profile.handle), syncEnabled: saved.syncEnabled, syncRevision: saved.syncRevision };
+      const profile = profileFromEntity(saved.entity);
+      return { id: row.entity.id, scopeId: profile.providerId, handle: normalizedHandle(profile.handle), syncEnabled: saved.extras.syncEnabled, syncRevision: saved.extras.syncRevision };
     }) };
   }
 
@@ -327,18 +329,18 @@ export class XModule {
     }
   }
 
-  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; owners: Map<string, Entity & Syncable>; deletions: Map<string, string> }> {
+  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; owners: Map<string, ReturnType<typeof savedProfile>>; deletions: Map<string, string> }> {
     const profileEvents = incoming.filter((env) => env.kind !== "delete" && (env.payload as JsonObject).entity_type === "profile");
     const externalIds = [...new Set(profileEvents.map((env) => {
       if (typeof env.remoteId !== "string" || !/^x:profile:\d+$/.test(env.remoteId)) throw new Error("X profile event has no stable identity");
       return env.remoteId;
     }))];
-    const profileByExternalId = new Map<string, Entity & Syncable>();
+    const profileByExternalId = new Map<string, ReturnType<typeof savedProfile>>();
     if (externalIds.length > 0) {
       const ids = await this.graph.findByExternalIds(externalIds);
       if (ids.length !== externalIds.length) throw new Error("X profile lookup length mismatch");
       const found = ids.filter((id): id is string => id !== null);
-      const held = new Map((found.length === 0 ? [] : await this.graph.getEntities(found)).map((row) => [row.id, row]));
+      const held = new Map<string, EntityRead>((found.length === 0 ? [] : await this.graph.getEntities(found, { extras: true })).map((row) => [row.entity.id, row]));
       const missing = externalIds.filter((_, index) => ids[index] === null);
       if (missing.length > 0) {
         if ((await this.profileRows()).some((row) => row.syncEnabled === null || row.syncRevision === null) || (await this.legacyEntries()).length > 0) throw new Error("X discovery waits for synchronization migration");
@@ -361,27 +363,27 @@ export class XModule {
           ids[externalIds.indexOf(externalId)] = id;
           createdIds.push(id);
         }
-        for (const row of await this.graph.getEntities(createdIds)) held.set(row.id, row);
+        for (const row of await this.graph.getEntities(createdIds, { extras: true })) held.set(row.entity.id, row);
       }
       externalIds.forEach((externalId, index) => {
         const id = ids[index];
         const row = id === null || id === undefined ? undefined : held.get(id);
-        if (row === undefined || sourceExternalId(row) !== externalId) throw new Error("X profile lookup returned an incomplete or mismatched identity");
+        if (row === undefined || sourceExternalId(row.entity) !== externalId) throw new Error("X profile lookup returned an incomplete or mismatched identity");
         profileByExternalId.set(externalId, savedProfile(row));
       });
     }
-    const byHandle = new Map<string, Entity & Syncable>();
+    const byHandle = new Map<string, ReturnType<typeof savedProfile>>();
     for (const env of profileEvents) {
       if (typeof env.remoteId !== "string") throw new Error("X profile event has no remote ID");
       const profile = profileByExternalId.get(env.remoteId);
       if (profile === undefined) throw new Error("X profile event has no owner");
       const handle = normalizedHandle((env.payload as JsonObject).handle);
       const earlier = byHandle.get(handle);
-      if (earlier !== undefined && earlier.id !== profile.id) throw new Error("X page has ambiguous handle ownership");
+      if (earlier !== undefined && earlier.entity.id !== profile.entity.id) throw new Error("X page has ambiguous handle ownership");
       byHandle.set(handle, profile);
     }
     let rows: SyncMigrationEntity[] | undefined;
-    const owners = new Map<string, Entity & Syncable>();
+    const owners = new Map<string, ReturnType<typeof savedProfile>>();
     const deletions = new Map<string, string>();
     for (const env of incoming) {
       const remoteId = env.remoteId;
@@ -390,15 +392,15 @@ export class XModule {
       if (env.kind === "delete") {
         const id = await this.graph.findByExternalId(remoteId);
         if (id === null) continue;
-        const stored = await this.graph.getEntityFull(id, { links: true });
+        const stored = await this.graph.getEntityFull(id, { links: true, extras: true });
         if (stored === null) throw new Error("X deletion target disappeared");
-        let owner: Entity | null;
-        if (stored.entity.schemaId === PROFILE) owner = stored.entity;
+        let owner: EntityRead | null;
+        if (stored.entity.schemaId === PROFILE) owner = stored;
         else if (stored.entity.schemaId === POST) {
           const authors = stored.links.filter((link) => link.from === id && link.kind === AUTHORED_BY && link.validUntil === null);
           const author = authors[0];
           if (authors.length !== 1 || author === undefined) throw new Error("X deletion has no unique stored author");
-          owner = await this.graph.getEntity(author.to);
+          owner = await this.graph.getEntity(author.to, { extras: true });
         } else throw new Error("X deletion target has the wrong schema");
         if (owner === null) throw new Error("X deletion author is missing");
         owners.set(remoteId, savedProfile(owner));
@@ -415,7 +417,7 @@ export class XModule {
           const matches = rows.filter((row) => normalizedHandle(row.properties.handle) === handle);
           const match = matches[0];
           if (matches.length !== 1 || match === undefined) throw new Error("X post has no unique profile owner");
-          const held = await this.graph.getEntity(match.id);
+          const held = await this.graph.getEntity(match.id, { extras: true });
           if (held === null) throw new Error("X post author is missing");
           owner = savedProfile(held);
           byHandle.set(handle, owner);
@@ -425,9 +427,9 @@ export class XModule {
     }
     const groups = new Map<string, string[]>();
     for (const [remoteId, owner] of owners) {
-      const ids = groups.get(owner.id) ?? [];
+      const ids = groups.get(owner.entity.id) ?? [];
       ids.push(remoteId);
-      groups.set(owner.id, ids);
+      groups.set(owner.entity.id, ids);
     }
     const admitted = new Set(await this.graph.admitSyncEntities([...groups].map(([entityId, remoteIds]) => ({ entityId, remoteIds }))));
     return { envelopes: incoming.filter((env) => typeof env.remoteId === "string" && admitted.has(env.remoteId)), owners, deletions };
@@ -496,7 +498,7 @@ export class XModule {
           date: null,
           // S5: the profile DICT is the record, under the issuer's own key.
           externalId: remoteId,
-          syncEnabled: owner.syncEnabled,
+          syncEnabled: owner.extras.syncEnabled,
           properties,
         });
       } else if (entityType === "post") {
@@ -528,7 +530,7 @@ export class XModule {
     for (const env of envelopes) {
       if (env.kind === "delete" || (env.payload as JsonObject).entity_type !== "post" || typeof env.remoteId !== "string") continue;
       const owner = owners.get(env.remoteId);
-      const ownerExternalId = owner === undefined ? null : sourceExternalId(owner);
+      const ownerExternalId = owner === undefined ? null : sourceExternalId(owner.entity);
       if (ownerExternalId === null) throw new Error("X post author has no stable external id");
       const key = ownerExternalId;
       if (!entities.some((item) => item.key === key) && !refs.some((item) => item.key === key)) refs.push({ key, externalId: ownerExternalId });
@@ -565,7 +567,7 @@ export class XModule {
     });
     if (profileIds.length === 0) return known;
     const profiles = await this.graph.getEntities(profileIds.map(({ id }) => id));
-    const byId = new Map(profiles.map((item) => [item.id, item]));
+    const byId = new Map<string, Entity>(profiles.map((item) => [item.id, item]));
     for (const { externalId, id } of profileIds) {
       const held = byId.get(id);
       if (held !== undefined) known.set(externalId, held.properties as JsonObject);

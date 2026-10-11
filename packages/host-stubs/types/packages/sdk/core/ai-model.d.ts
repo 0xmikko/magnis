@@ -217,6 +217,7 @@ export declare const ModelCatalogPageSchema: z.ZodObject<{
 }, z.core.$strict>;
 export type ModelCatalogPage = z.output<typeof ModelCatalogPageSchema>;
 export declare const LlmModelInfoSchema: z.ZodObject<{
+    private: z.ZodBoolean;
     id: z.ZodString;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -275,6 +276,7 @@ export declare const LlmModelInfoSchema: z.ZodObject<{
 }, z.core.$strict>;
 export type LlmModelInfo = z.output<typeof LlmModelInfoSchema>;
 export declare const EmbeddingModelInfoSchema: z.ZodObject<{
+    private: z.ZodBoolean;
     id: z.ZodString;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -665,6 +667,7 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;

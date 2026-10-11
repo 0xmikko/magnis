@@ -13,7 +13,7 @@ export interface ListItem {
     readonly preview?: string | null;
     readonly timestamp?: string | null;
     readonly avatarUrl?: string | null;
-    readonly isPinned?: boolean;
+    readonly pinOrder?: number | null;
     readonly isArchived?: boolean;
     readonly unreadCount?: number;
     readonly metadata?: Readonly<Record<string, unknown>>;

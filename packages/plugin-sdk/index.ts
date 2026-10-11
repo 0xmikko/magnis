@@ -22,13 +22,14 @@ export * from "./contract/lifecycle";
 
 import type {
   Entity,
+  EntityRead,
+  PersistentEntity,
   JsonObject,
   JsonValue,
   Link,
   LinkedEntitySummary,
   PaginatedResponse,
   PluginContext,
-  SearchEntitiesParams,
   SyncHandlerParams,
   SyncHookParams,
   SyncReceipt,
@@ -95,15 +96,16 @@ export function reachedEndpoints(
 /** One endpoint as a module's detail lists it: the endpoint entity, labelled
  * `linkKind`, with the statement of the link that reached it — an agent link
  * says how sure it is, and an ended one says when it ended. */
-export function linkedEntitySummary(entity: Entity, link: Link, linkKind: string): LinkedEntitySummary {
+export function linkedEntitySummary(entity: Entity, link: Link, _linkKind: string): LinkedEntitySummary {
   return {
     id: entity.id,
     name: entity.name,
     schemaId: entity.schemaId,
-    linkKind,
+    linkKind: link.kind,
+    direction: link.to === entity.id ? "out" : "in",
     createdAt: entity.createdAt,
     origin: link.origin,
-    confidence: link.origin === "agent" ? link.confidence : null,
+    confidence: link.origin === "derived" ? link.confidence : null,
     validUntil: link.validUntil,
   };
 }
@@ -116,10 +118,25 @@ export function linkedEntitySummary(entity: Entity, link: Link, linkKind: string
 // the one correct implementation: overfetch by ONE row past the window so
 // `total` exceeds the shown page exactly while more matches exist.
 // (Param type: SearchEntitiesPageParams in ./contract/module.)
-export async function searchEntitiesPage(
-  graph: { searchEntitiesByName(p: SearchEntitiesParams): Promise<Entity[]> },
-  p: SearchEntitiesPageParams,
-): Promise<PaginatedResponse<Entity>> {
+export function searchEntitiesPage(
+  graph: Pick<GraphService, "searchEntitiesByName">,
+  p: SearchEntitiesPageParams<EntityRead> & { extras: true },
+): Promise<PaginatedResponse<EntityRead>>;
+export function searchEntitiesPage(
+  graph: Pick<GraphService, "searchEntitiesByName">,
+  p: SearchEntitiesPageParams & { extras?: undefined },
+): Promise<PaginatedResponse<PersistentEntity>>;
+export function searchEntitiesPage(
+  graph: Pick<GraphService, "searchEntitiesByName">,
+  p: (SearchEntitiesPageParams<EntityRead> & { extras: true }) | (SearchEntitiesPageParams & { extras?: undefined }),
+): Promise<PaginatedResponse<PersistentEntity> | PaginatedResponse<EntityRead>> {
+  const params = { query: p.query, schemaIds: [p.schemaId] };
+  return p.extras === true
+    ? searchPage((limit) => graph.searchEntitiesByName({ ...params, limit, extras: true }), p)
+    : searchPage((limit) => graph.searchEntitiesByName({ ...params, limit }), p);
+}
+
+async function searchPage<T>(find: (limit: number) => Promise<T[]>, p: SearchEntitiesPageParams<T>): Promise<PaginatedResponse<T>> {
   // NO client-side re-sort: the backend order is a stable TOTAL order
   // (prefix-match first, date DESC, id), so top-N windows are consistent
   // prefixes across pages. Re-sorting different overfetch windows makes pages
@@ -127,11 +144,7 @@ export async function searchEntitiesPage(
   const needed = p.offset + p.limit + 1;
   let fetchLimit = needed;
   for (;;) {
-    const found = await graph.searchEntitiesByName({
-      query: p.query,
-      schemaIds: [p.schemaId],
-      limit: fetchLimit,
-    });
+    const found = await find(fetchLimit);
     const kept = p.filter ? await p.filter(found) : found;
     // Done when the page (+1 for an honest hasMore) is filled with SURVIVORS,
     // or the source is exhausted (returned fewer than asked). Otherwise the

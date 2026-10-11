@@ -40,7 +40,7 @@ function attendeesToDisplayList(value: unknown): string[] {
   });
 }
 
-/** The generic context card carries attendees as `attendee` EDGES — email is
+/** The generic context card carries attendees as `meetings.attendee` EDGES — email is
  * the address node's name, the invite's display name rides the edge
  * dictionary. Presentation-layer read of the neighbour list. */
 function attendeesFromNeighbours(data: Readonly<Record<string, unknown>>): string[] {
@@ -50,7 +50,7 @@ function attendeesFromNeighbours(data: Readonly<Record<string, unknown>>): strin
   for (const n of raw as readonly unknown[]) {
     if (n === null || typeof n !== "object" || Array.isArray(n)) continue;
     const rec = n as Record<string, unknown>;
-    if (rec.kind !== "attendee") continue;
+    if (rec.kind !== "meetings.attendee") continue;
     const meta = rec.metadata;
     const display =
       meta !== null && typeof meta === "object" && !Array.isArray(meta)

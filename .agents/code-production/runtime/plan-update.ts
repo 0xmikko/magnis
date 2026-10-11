@@ -1456,8 +1456,9 @@ function git(root: string, args: readonly string[]): string {
   return gitRaw(root, args).trim();
 }
 
-function journalPath(root: string): string {
-  const value = git(root, ["rev-parse", "--git-path", "plan-update-journal.json"]);
+function journalPath(root: string, plan: string): string {
+  const key = createHash("sha256").update(plan).digest("hex").slice(0, 12);
+  const value = git(root, ["rev-parse", "--git-path", `plan-update-journal-${key}.json`]);
   return resolve(root, value);
 }
 
@@ -1903,7 +1904,7 @@ export function mutatePlanFile(root: string, planArg: string, operation: string,
   const absolute = resolve(root, planArg);
   const plan = absolute.slice(root.length + 1);
   if (absolute === root || plan.startsWith("..")) throw new Error("plan must be inside the repository");
-  const path = journalPath(root);
+  const path = journalPath(root, plan);
   const body = readFileSync(absolute, "utf8");
   const head = git(root, ["rev-parse", "HEAD"]);
   const currentHash = digest(body);
@@ -1989,7 +1990,7 @@ export function verifyStagedPlan(root: string, planArg: string): void {
   // and the guard bites again, or a merge would be a hole through which any
   // plan could be rewritten unjournalled.
   if (merging(root) && carriedByMerge(root, plan, gitRaw(root, ["show", `:${plan}`]))) return;
-  const journal = readJournal(journalPath(root));
+  const journal = readJournal(journalPath(root, plan));
   if (journal === null) throw new Error("locked plan mutation has no journal");
   if (journal.plan !== plan || journal.root !== root || journal.baseHead !== git(root, ["rev-parse", "HEAD"])) {
     throw new Error("mutation journal binding does not match this staged plan");
@@ -2007,7 +2008,7 @@ export function verifyStagedPlan(root: string, planArg: string): void {
 export function clearSpentJournal(planArg: string, commit: string): void {
   const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const plan = resolve(root, planArg).slice(root.length + 1);
-  const path = journalPath(root);
+  const path = journalPath(root, plan);
   const journal = readJournal(path);
   if (journal === null) return;
   if (journal.plan !== plan) throw new Error("mutation journal belongs to another plan");

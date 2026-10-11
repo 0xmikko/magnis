@@ -78,7 +78,7 @@ function seamRpc() {
 function persistedConfig(graph: G): TriggerConfigData {
   const updateProperties = graph.spies.updateProperties;
   if (!updateProperties) throw new Error("updateProperties spy not mounted");
-  const calls = updateProperties.mock.calls as [PropertiesUpdate][];
+  const calls = (graph.spies.createEntity?.mock.calls.length ? graph.spies.createEntity.mock.calls : updateProperties.mock.calls) as [PropertiesUpdate][];
   expect(calls.length).toBeGreaterThan(0);
   const lastWrite = calls[calls.length - 1];
   if (!lastWrite) throw new Error("no config write recorded");

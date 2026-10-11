@@ -19,7 +19,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, sourceEnvelope, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, link, mockGraph, mountModule, page, sourceEnvelope, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical } from "../../types.ts";
 
@@ -31,7 +31,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     applyBatch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
-        ids: Object.fromEntries([...frag.entities, ...frag.refs].map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries([...frag.entities, ...frag.refs].map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
@@ -69,7 +69,7 @@ const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
 describe("meetings @syncHandler — upsert", () => {
   it("upserts a snapshot via applyBatch keyed on its external id, no trigger", async () => {
     const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+      ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
       created: 1,
       updated: 0,
       linksAdded: 0,
@@ -162,7 +162,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       {
         fromKey: "r5",
         toKey: "addr:a@x",
-        kind: "attendee",
+        kind: "meetings.attendee",
         confidence: null,
         metadata: { display_name: "Alice" },
         declaredBy: "r5",
@@ -172,7 +172,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       {
         fromKey: "r5",
         toKey: "addr:b@x",
-        kind: "attendee",
+        kind: "meetings.attendee",
         confidence: null,
         metadata: null,
         declaredBy: "r5",
@@ -206,10 +206,10 @@ describe("meetings @syncHandler — attendee edge reconcile", () => {
     // inbound edge that merely points AT the event.
     const listLinksForEntity = vi.fn(() =>
       Promise.resolve([
-        link("id-r6", "addr-old@x", "attendee", { id: "l-stale" }),
-        link("id-r6", "id-addr:ann@x", "attendee", { id: "l-keep" }),
+        link("id-r6", "addr-old@x", "meetings.attendee", { id: "l-stale" }),
+        link("id-r6", "id-addr:ann@x", "meetings.attendee", { id: "l-keep" }),
         link("id-r6", "proj-1", "created_by", { id: "l-proj" }),
-        link("other", "id-r6", "attendee", { id: "l-inbound" }),
+        link("other", "id-r6", "meetings.attendee", { id: "l-inbound" }),
       ]),
     );
     const { mod } = makeModule(
@@ -277,7 +277,7 @@ describe("completed Calendar replacement pass", () => {
     });
     expect(listEntitiesByPropertyField).toHaveBeenCalledWith({ entitySchema: CAL, key: "account_id", value: "acct-1", limit: 500, offset: 0 });
     expect(deleteEntity).toHaveBeenCalledTimes(1);
-    expect(deleteEntity).toHaveBeenCalledWith("old");
+    expect(deleteEntity).toHaveBeenCalledWith(entityId("old"));
   });
 });
 

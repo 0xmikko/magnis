@@ -184,7 +184,7 @@ export class AddressbookModule {
       if (!replicaId) continue;
       const addrIds = row.addresses
         .map((a) => addressId.get(a))
-        .filter((id): id is string => typeof id === "string");
+        .filter((id) => typeof id === "string");
       await this.attachReplica(replicaId, row.p, addrIds, at);
     }
     return created;

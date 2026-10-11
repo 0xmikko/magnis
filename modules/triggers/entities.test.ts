@@ -3,7 +3,7 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
-import type { PropertiesUpdate } from "@magnis/sdk";
+import { CreateEntityParamsSchema } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
@@ -16,14 +16,15 @@ const TRIGGER_ID = "33333333-3333-4333-8333-333333333333";
 async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const graph = mockGraph({
-    createEntity: () => Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schemaId: TRIGGER })),
-    updateProperties: (input: PropertiesUpdate) => {
-      written.push(input.properties as Record<string, unknown>);
-      return Promise.resolve(undefined);
+    createEntity: (params) => {
+      const input = CreateEntityParamsSchema.parse(params);
+      if (input.properties === undefined) throw new Error("trigger must supply its initial properties");
+      written.push(input.properties);
+      return Promise.resolve(graphEntity(TRIGGER_ID, input.name, { schemaId: TRIGGER, properties: input.properties }));
     },
     addLink: () => Promise.resolve(undefined),
     deleteEntity: () => Promise.resolve(undefined),
-  } as never);
+  });
   const { module } = mountModule(TriggersModule, {
     graph,
     rpc: { execute: vi.fn(() => Promise.resolve(null)) },

@@ -1,5 +1,5 @@
 import { linkedEntitySummary } from "@magnis/plugin-sdk";
-import type { Entity, Link, LinkedEntitySummary } from "@magnis/sdk";
+import type { Entity, EntityRead, Link, LinkedEntitySummary } from "@magnis/sdk";
 import type { ProjectCanonical, ProjectListItem } from "../types.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,9 +41,10 @@ export function canonicalString(
 // would not reproduce it). The per-page canonical map is fetched in one
 // list_canonical_for_entities batch — no per-row N+1.
 export function buildProjectListItem(
-  entity: Entity,
+  read: EntityRead,
   canonical: Partial<ProjectCanonical>,
 ): ProjectListItem {
+  const { entity, extras } = read;
   const name =
     entity.name && entity.name.length > 0
       ? entity.name
@@ -54,6 +55,6 @@ export function buildProjectListItem(
     name,
     status: canonicalString(canonical, "project.status"),
     createdAt: entity.createdAt,
-    isPinned: entity.isPinned,
+    extras,
   };
 }

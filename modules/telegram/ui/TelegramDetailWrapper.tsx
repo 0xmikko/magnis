@@ -45,9 +45,8 @@ function useTelegramChatFromDictionary(entityId: string): TelegramChat | undefin
       avatarUrl: resolveAvatarUrl(baseUrl, response.avatar_url),
       lastMessage: response.last_message ?? "",
       time: response.last_message_time ?? "",
-      pinned: response.is_pinned ?? false,
-      isIndexed: response.indexed,
-      syncEnabled: response.syncEnabled,
+      pinned: response.extras.pinOrder !== null,
+      syncEnabled: response.extras.syncEnabled,
     };
   }, [response, entityId, baseUrl]);
 }
@@ -78,28 +77,23 @@ export function TelegramDetailWrapper({
 
   useTelegramSync(refreshChats);
 
-  const changeSetting = useCallback(async (setting: "syncEnabled" | "indexed") => {
+  const changeSetting = useCallback(async () => {
     if (!selectedChat || saving.current) return;
     saving.current = true;
     setSavingSettings(true);
     setSettingsError(undefined);
     setSettingsStatus("Saving…");
     try {
-      if (setting === "syncEnabled") {
-        const response = await runtime.transport.rpc<SetSyncEnabledResult>("telegram.chat.setSyncEnabled", {
-          id: entityId,
-          syncEnabled: !selectedChat.syncEnabled,
-        });
-        const result = response.results.find((item) => item.identityId === entityId);
-        if (!result) throw new Error("The synchronization change returned no result.");
-        if (result.kind === "failed") throw new Error(result.message);
-        setSettingsStatus(result.application.kind === "pending"
-          ? "Synchronization setting saved. Applying…"
-          : `Synchronization setting saved, but could not be applied: ${result.application.message}`);
-      } else {
-        await runtime.transport.rpc("graph.entity.update", { entityId, indexed: !selectedChat.isIndexed });
-        setSettingsStatus("Indexing setting saved.");
-      }
+      const response = await runtime.transport.rpc<SetSyncEnabledResult>("telegram.chat.setSyncEnabled", {
+        id: entityId,
+        syncEnabled: !selectedChat.syncEnabled,
+      });
+      const result = response.results.find((item) => item.identityId === entityId);
+      if (!result) throw new Error("The synchronization change returned no result.");
+      if (result.kind === "failed") throw new Error(result.message);
+      setSettingsStatus(result.application.kind === "pending"
+        ? "Synchronization setting saved. Applying…"
+        : `Synchronization setting saved, but could not be applied: ${result.application.message}`);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: telegramKeys.chats() }),
         queryClient.invalidateQueries({ queryKey: telegramKeys.chatDetail(entityId) }),
@@ -125,10 +119,8 @@ export function TelegramDetailWrapper({
       onBackfill={messages.handleBackfill}
       onSendMessage={messages.canSend ? messages.handleSendMessage : undefined}
       onReplyByAgent={messages.handleReplyByAgent}
-      isIndexed={selectedChat?.isIndexed}
-      onToggleIndexing={() => { void changeSetting("indexed"); }}
       syncEnabled={selectedChat?.syncEnabled}
-      onToggleSync={() => { void changeSetting("syncEnabled"); }}
+      onToggleSync={() => { void changeSetting(); }}
       savingSettings={savingSettings}
       settingsStatus={settingsStatus}
       settingsError={settingsError}

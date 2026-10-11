@@ -3,6 +3,7 @@
 
 import { linkedEntitySummary, reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GetParams, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor, type SetSyncEnabledResult, type SyncTargetResult } from "@magnis/plugin-sdk";
 import type {
+  EntityRead,
   Entity,
   EntitySearchHit,
   JsonValue,
@@ -195,7 +196,7 @@ export class ContactsModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: Entity[];
+    let rows: EntityRead[];
     let total: number;
     if (search) {
       // Shared paging helper (2026-07-03): the old limit+offset fetch truncated
@@ -204,6 +205,7 @@ export class ContactsModule {
       const page = await searchEntitiesPage(this.graph, {
         query: search,
         schemaId: CONTACT,
+        extras: true,
         limit,
         offset,
       });
@@ -216,6 +218,7 @@ export class ContactsModule {
       // parameter stays on the wire until the clients drop it.
       const page = await this.graph.listEntities({
         schemaId: CONTACT,
+        extras: true,
         limit,
         offset,
         order: "idx",
@@ -228,28 +231,28 @@ export class ContactsModule {
     // plus its `identity` EDGES — the email and the channel badges are nodes
     // the hub reaches, so the edges are the answer. One batch read for the
     // whole page, no per-row N+1.
-    const ids = rows.map((e) => e.id);
+    const ids = rows.map((e) => e.entity.id);
     const identityById = await this.identityNeighboursByEntity(ids);
-    const items = rows.map((e) => buildListItem(e, identityById.get(e.id) ?? []));
+    const items = rows.map((e) => buildListItem(e, identityById.get(e.entity.id) ?? []));
     return { items, total, limit, offset };
   }
 
-  private async syncTarget(identity: Entity): Promise<ContactSyncTarget> {
+  private async syncTarget(read: EntityRead): Promise<ContactSyncTarget> {
+    const identity = read.entity;
     const target = { identityId: identity.id, schemaId: identity.schemaId, name: identity.name };
     try {
-      let row = identity;
+      let saved = read;
       if (identity.schemaId === "telegram.account") {
         const userId = (identity.properties as Record<string, unknown>).telegram_user_id;
         if (typeof userId !== "number" || !Number.isSafeInteger(userId)) throw new Error("Telegram identity has no provider user ID");
         const id = await this.graph.findByExternalId(chatExternalId(String(userId)));
         if (id === null) throw new Error("Telegram identity has no stored direct chat");
-        const chat = await this.graph.getEntity(id);
-        if (chat?.schemaId !== "telegram.chat" || (chat.properties as Record<string, unknown>).type !== "private") throw new Error("Telegram identity's stored chat is not a direct chat");
-        row = chat;
+        const chat = await this.graph.getEntity(id, { extras: true });
+        if (chat?.entity.schemaId !== "telegram.chat" || (chat.entity.properties as Record<string, unknown>).type !== "private") throw new Error("Telegram identity's stored chat is not a direct chat");
+        saved = chat;
       }
-      if (!("syncEnabled" in row) || typeof row.syncEnabled !== "boolean" || !("syncRevision" in row)
-        || typeof row.syncRevision !== "string" || !/^\d+$/.test(row.syncRevision)) throw new Error("Identity target has no saved synchronization choice");
-      return { ...target, state: { kind: "ready", id: row.id, syncEnabled: row.syncEnabled, syncRevision: row.syncRevision } };
+      if (saved.extras.syncEnabled === null) throw new Error("Identity target has no saved synchronization choice");
+      return { ...target, state: { kind: "ready", id: saved.entity.id, syncEnabled: saved.extras.syncEnabled, syncRevision: saved.extras.syncRevision } };
     } catch (error) {
       return { ...target, state: { kind: "unavailable", message: error instanceof Error ? error.message : String(error) } };
     }
@@ -260,7 +263,7 @@ export class ContactsModule {
   async get(params: GetParams): Promise<ContactDetailView> {
     // Entity + link edges in ONE fetch (user-scoped → null for a non-owner
     // or wrong schema); link neighbours resolved in ONE getEntities batch.
-    const detail = await this.graph.getEntityFull(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true, extras: true });
     if (detail?.entity.schemaId !== CONTACT) {
       throw new Error(`contact not found: ${params.id}`);
     }
@@ -295,15 +298,15 @@ export class ContactsModule {
     );
 
     // ONE batch over the hub's endpoints ∪ the replicas', whatever the count.
-    const neighbours = new Map<string, Entity>();
+    const neighbours = new Map<string, EntityRead>();
     const reachedIds = [...reached.keys()];
     if (reachedIds.length > 0) {
-      for (const t of await this.graph.getEntities(reachedIds)) neighbours.set(t.id, t);
+      for (const t of await this.graph.getEntities(reachedIds, { extras: true })) neighbours.set(t.entity.id, t);
     }
 
     const linked: LinkedEntitySummary[] = [];
     for (const [id, reach] of reached) {
-      const t = neighbours.get(id);
+      const t = neighbours.get(id)?.entity;
       if (!t) continue;
       // The hub does not inherit its replicas' message traffic (INV-P2b.4, as
       // amended). A shared `email.address` is on the far side of one edge per
@@ -321,15 +324,15 @@ export class ContactsModule {
     // neighbours the detail already resolved — no canonical read.
     const identityNeighbours = links
       .filter((l) => l.kind === "identity" && l.from === e.id)
-      .map((l) => neighbours.get(l.to))
-      .filter((n): n is Entity => n !== undefined);
-    const base = buildListItem(e, identityNeighbours);
+      .map((l) => neighbours.get(l.to)?.entity)
+      .filter((n) => n !== undefined);
+    const base = buildListItem(detail, identityNeighbours);
     const syncTargets: ContactSyncTarget[] = [];
     const activeIds = new Set(links.filter(link => link.kind === "identity" && link.from === e.id && link.validUntil === null).map(link => link.to));
     for (const id of activeIds) {
       const identity = neighbours.get(id);
       if (!identity) throw new Error(`Linked identity is unavailable: ${id}`);
-      if (SYNC_IDENTITY_SCHEMAS.has(identity.schemaId)) syncTargets.push(await this.syncTarget(identity));
+      if (SYNC_IDENTITY_SCHEMAS.has(identity.entity.schemaId)) syncTargets.push(await this.syncTarget(identity));
     }
 
     // ── S3 (§5.1): the card is composed at read time ────────────────────
@@ -341,7 +344,7 @@ export class ContactsModule {
     const emails: { id: string; address: string }[] = [];
     const replicas: ContactDetailView["replicas"] = [];
     for (const id of identityIds) {
-      const t = neighbours.get(id);
+      const t = neighbours.get(id)?.entity;
       if (!t) continue;
       if (t.schemaId === "email.address") {
         if (t.name === null) throw new Error(`email.address ${t.id} has no name`);
@@ -443,10 +446,10 @@ export class ContactsModule {
   // values) — the node it just wrote and its identity edges. Not the hot read
   // path (no N+1 loop).
   private async listItemFor(entity: Entity): Promise<ContactListItem> {
-    const fresh = await this.graph.getEntity(entity.id);
-    const node = fresh ?? entity;
+    const fresh = await this.graph.getEntity(entity.id, { extras: true });
+    if (fresh === null) throw new Error(`Contact ${entity.id} disappeared after writing`);
     const identity = await this.identityNeighboursByEntity([entity.id]);
-    return buildListItem({ ...entity, properties: node.properties }, identity.get(entity.id) ?? []);
+    return buildListItem(fresh, identity.get(entity.id) ?? []);
   }
 
   // Mirrors the native ContactsModuleController::create_single_contact
@@ -728,9 +731,9 @@ export class ContactsModule {
     const detail = await this.graph.getEntityFull(params.contactId, { links: true });
     if (detail?.entity.schemaId !== CONTACT) throw new Error("X migration contact is missing");
     if (!detail.links.some((link) => link.from === params.contactId && link.to === params.profileId && link.kind === "identity" && link.validUntil === null)) throw new Error("X migration identity link is not committed");
-    const profile = await this.graph.getEntity(params.profileId);
-    if (profile?.schemaId !== "x.profile" || !("syncEnabled" in profile) || typeof profile.syncEnabled !== "boolean"
-      || !("syncRevision" in profile) || typeof profile.syncRevision !== "string" || !/^\d+$/.test(profile.syncRevision)) throw new Error("X migration profile has no saved choice");
+    const read = await this.graph.getEntity(params.profileId, { extras: true });
+    if (read?.entity.schemaId !== "x.profile" || read.extras.syncEnabled === null) throw new Error("X migration profile has no saved choice");
+    const profile = read.entity;
     const handle = (profile.properties as Record<string, unknown>).handle;
     if (profile.origin !== "canonical" || !/^x:profile:\d+$/.test(profile.source.externalId)
       || typeof handle !== "string" || handle.trim().toLowerCase() !== params.handle) throw new Error("X migration profile identity does not match the legacy entry");
