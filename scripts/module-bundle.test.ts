@@ -8,7 +8,7 @@
 import type { PluginModuleShape } from "@magnis/plugin-sdk";
 import type { PluginContext } from "@magnis/sdk";
 import { test, expect, beforeAll } from "bun:test";
-import { buildPlugin, buildAll, discoverPlugins } from "./build-plugins.ts";
+import { buildPlugin, discoverPlugins } from "./build-plugins.ts";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -66,9 +66,18 @@ test("tst_module_decorators_001: bundled module decorators register the plugin's
 // All-plugin guard: NO module bundle may contain the TC39 decorator marker
 // (`__decorateElement`). If it does, Bun's decorator lowering leaked past the
 // tsc onLoad hook and that plugin's tools would silently fail to register.
-test("tst_module_decorators_002: no module bundle emits TC39 decorators", async () => {
+test("tst_module_decorators_002: no module bundle emits TC39 decorators", () => {
   const pluginsDir = REPO;
-  await buildAll({ pluginsDir, distDir: DIST });
+  // Exercise the shipped build command. Bun 1.3 cannot reliably bundle the
+  // SDK's runtime schemas after loading those same modules in its test process.
+  const build = Bun.spawnSync([process.execPath, "run", "agent:build"], {
+    cwd: REPO,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (build.exitCode !== 0) {
+    throw new Error(`module build failed (${build.exitCode}):\n${build.stderr.toString()}`);
+  }
   const offenders: string[] = [];
   for (const id of discoverPlugins(pluginsDir)) {
     const bundlePath = join(DIST, "modules", id, "bundle.json");
@@ -79,7 +88,7 @@ test("tst_module_decorators_002: no module bundle emits TC39 decorators", async 
     if (js.includes("__decorateElement(")) offenders.push(id);
   }
   expect(offenders).toEqual([]);
-});
+}, 30_000);
 
 // All-plugin guard: a module DECLARES its entities in entities.ts, which is a
 // build-time leaf importing zod. Nothing the isolate loads may reach it — one

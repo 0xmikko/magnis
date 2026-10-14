@@ -2387,7 +2387,33 @@ These are explicit limits, not defaults inferred from incidental code. The migra
 
 The matching implementation heads are app [`230d381`](https://github.com/0xmikko/magnis-app/commit/230d38182222d1666a0814da40ad3d97e9cc7d4f) and catalog [`86532f8`](https://github.com/0xmikko/magnis/commit/86532f89bf4f78eb7d7550a4039c34aaa83051e2). They use SDK 0.2.0 and module API 0.3.0; the Source protocol is unchanged. Persistent/derived values, flat extras, configured model trust for embeddings/search, protected graph users/ownership, shared domain admission and observed communication facts are implemented on those branches. Initial Entity properties are validated before storage, including complete Trigger definitions. Final integration commits and artifact digests are recorded in the migration plan. Event dispatch to subscriptions, ending events and ownership transfer remain deferred. This checkpoint does not imply merge or channel publication.
 
-Release compatibility has a separate limit: the new host rejects module API 0.2.0, including an incompatible artifact already installed in a workspace. Bootstrap resolves enabled artifacts before restoring their activation descriptors; it does not convert or replace their code. The integration fixtures verify matching API 0.3.0 packages and refusal of incompatible replacement candidates. SQL and workspace-data migration do not establish an in-place package upgrade. A coordinated installed-package transition must be verified before releasing this host to existing installations.
+### Updating installed module API 0.2 packages
+
+Before restoring modules, ExtensionService migrates every content-addressed installed module whose stored API is `0.2.0`, including disabled modules. The configured channel must provide an exact compatible `0.3.0` candidate for each affected module. Package version and API version are independent: replacement also works when the package version stays the same and its content hash changes. An installation with no old modules makes no migration channel request and can restart offline.
+
+The transition reuses the package store, V8 descriptor preparation and existing graph/search validation:
+
+1. Stage and verify all candidates: channel identity, archive hash, API, schema and bundle. Prepare activation descriptors without running module effects.
+2. Validate dependencies and contracts for the resulting enabled set, including unchanged compatible modules. Register all schema owners before Link declarations; stored sidebar position is not dependency order. A missing enabled dependency is an error, not permission to enable it.
+3. Publish immutable package files, then replace all affected installation pointers, normalized manifests, module contracts and enabled activation descriptors in one database transaction. Compare-and-swap checks the inspected package/manifest identity and enabled choice. Disabled modules retain a null activation descriptor.
+4. Restore the complete enabled set through ordinary bootstrap. Preserve enabled choices, original install times and positions, Entity/Link rows, settings, pin order, privacy/archive flags and sync choice/revision.
+
+This is a startup compatibility transition, not periodic package updating. Compatible modules are unchanged. Source/Skill protocols and the older hash-less artifact adoption path are unchanged.
+
+| Existing installation | Verified behavior |
+| --- | --- |
+| Enabled or disabled API 0.2 modules | Bootstrap replaces the whole old set and preserves each enabled choice. Disabled modules can subsequently run the new bundle when enabled. |
+| Old modules alongside compatible modules | Migrate only the old modules; an unchanged compatible module needs no channel offer. |
+| Offline channel, missing offer, bad API/hash/bundle or missing enabled dependency | Fail explicitly before changing installed rows or activating candidates. |
+| Database failure on the second replacement | Roll back the entire transaction, including manifests and contracts; a retry succeeds after the fault is removed. |
+| Enabled choice changes after preparation | Compare-and-swap refuses the transaction and preserves the newer choice; retry uses that choice. |
+| Restoration fails after the transaction commits | Retain the complete new installation, report the error and restore it on restart without fetching the channel. |
+
+Before commit, a failed transition leaves all installed rows and contracts unchanged. Files already published without a committed reference are ordinary package-store garbage; retry verifies/reuses the same exact candidate files. After commit, recovery uses the complete new set rather than rolling back individual packages.
+
+[Integration tests](https://github.com/0xmikko/magnis-app/blob/b3977537b6c2d59682afefc480a2b024692dadb0/backend/test/tst_bts_ext_update_001.test.ts) exercise the real database, package store, ExtensionService and V8 runtime. The smoke test migrates five real catalog bundles in reverse dependency order—Meetings, Email, Contacts, Projects and Notes—creates a note, then reads it after an offline restart. Separate browser smoke tests cover the store and installation of Meetings with its dependencies.
+
+These fixtures seed persisted API 0.2 artifact metadata; they are not an exported production workspace or evidence of provider-specific data migration. The implementation and smoke tests do not publish a release or channel. The initial transition requires compatible candidates for every installed old module, including disabled ones.
 
 ### Sources of the contracts
 
