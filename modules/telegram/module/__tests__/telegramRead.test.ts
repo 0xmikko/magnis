@@ -35,8 +35,9 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
         last_message_date: "2026-08-12T08:00:00Z",
         is_pinned: true,
         pin_order: 0,
-        sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
       },
+      // The host's record source: the Source account that delivered it.
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:chat:42" },
     });
     const recent = chatEntity("chat-2", "Team", {
       schemaId: CHAT,
@@ -91,6 +92,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const pinned = chatEntity(CHAT_ID, "Pinned", {
       schemaId: CHAT,
       properties: { chat_id: 42, title: "Pinned", last_message_date: "2026-08-12T08:00:00Z" },
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:chat:42" },
     });
     const recent = chatEntity("chat-2", "Recent", {
       schemaId: CHAT,
@@ -128,7 +130,6 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
           from: ACCOUNT_ID, to: entityId(spec.parentId), kind: "telegram.observed_in",
           metadata: {
             is_pinned: true, pin_order: spec.parentId === CHAT_ID ? 2 : 10,
-            sources: [{ account: "account-1" }],
           },
         }),
       ])),
@@ -182,8 +183,10 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.listLinked).toHaveBeenCalledTimes(4);
 
     hasOperator = false;
+    // Pinning is the operator's observation; the delivering account is the
+    // chat record's own source and needs no operator.
     await expect(module.chatsGet({ entity_id: CHAT_ID })).resolves.toMatchObject({
-      is_pinned: false, pin_order: null, account_id: null,
+      is_pinned: false, pin_order: null, account_id: "account-1",
     });
     expect(graph.spies.listLinked).toHaveBeenCalledTimes(4);
     expect(graph.spies.listLinksForEntities).not.toHaveBeenCalled();
@@ -280,6 +283,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const chat = chatEntity(CHAT_ID, "Investor chat", {
       schemaId: CHAT,
       properties: { chat_id: 42, title: "Investor chat" },
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:chat:42" },
     });
     const graph = mockGraph({
       findByExternalId: () => Promise.resolve(CHAT_ID),

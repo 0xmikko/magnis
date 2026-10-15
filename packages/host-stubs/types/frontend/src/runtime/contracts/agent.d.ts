@@ -81,6 +81,8 @@ export interface ModuleAgentContribution {
     readonly entityRenderers?: readonly EntityRendererRegistration[];
     readonly entityContextResolvers?: readonly AgentEntityContextResolver[];
     readonly navigateToEntity?: EntityNavigationHandler;
+    /** The module's settings, shown as the agent panel's Properties mode. */
+    readonly propertiesPanel?: ComponentType;
     readonly onDraftRequest?: (payload: unknown, runtime: AppRuntime) => void;
     readonly extractAllowlistTarget?: (toolCall: {
         name: string;
@@ -144,5 +146,6 @@ export interface AgentRuntime {
         toolBinding?: EntityOperationBinding;
     }): AllowlistTarget | null;
     resolveSystemPrompt(moduleId: string): string | undefined;
+    getPropertiesPanel(moduleId: string): ComponentType | null;
     dispatchContextAction(moduleId: string, actionId: string, payload?: unknown): void;
 }

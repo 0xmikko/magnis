@@ -27,6 +27,7 @@ function makeAgent(): AgentRuntime {
     setReplyTo: () => undefined,
     requestDraft: () => undefined,
     resolveEntityRenderer: () => null,
+    getPropertiesPanel: () => null,
     navigateToEntity: () => false,
     resolveHistoryRenderer: () => null,
     resolveTodoRenderer: () => null,

@@ -110,6 +110,7 @@ export declare const CreateEntityParamsSchema: z.ZodObject<{
     clientId: z.ZodExactOptional<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     idx: z.ZodExactOptional<z.ZodString>;
     date: z.ZodExactOptional<z.ZodString>;
+    properties: z.ZodExactOptional<z.ZodType<import("./json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonObject, unknown>>>;
     syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type CreateEntityParams = z.output<typeof CreateEntityParamsSchema>;

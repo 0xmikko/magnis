@@ -27,8 +27,10 @@ function docs(): void {
   }
 }
 
-export function typeConfig(path: string): string {
-  // @tested-by: tst_scripts_agent_stack_004
+/** The tsconfig that owns `path`, or null when none does — a file deleted
+ * with its whole project leaves no owner behind. */
+export function typeConfig(path: string): string | null {
+  // @tested-by: tst_scripts_agent_stack_004, tst_scripts_agent_stack_007
   if (vitestConfigs.has(path)) return "scripts/tsconfig.json";
   let dir = dirname(path);
   while (dir !== ".") {
@@ -36,7 +38,7 @@ export function typeConfig(path: string): string {
     if (existsSync(join(root, config))) return config;
     dir = dirname(dir);
   }
-  throw new Error(`No TypeScript owner for ${path}; declare its scoped check before committing.`);
+  return null;
 }
 
 /** The backend adapter runs one engine per call: bun:test targets first, then vitest targets. */
@@ -69,8 +71,14 @@ function commit(): void {
     }
     if (path.startsWith(`${runtime}/`)) continue; // Generated, version-pinned upstream runtime.
     if (!/\.(ts|tsx)$/.test(path)) continue;
-    configs.add(typeConfig(path));
-    if (!existsSync(join(root, path))) continue;
+    const exists = existsSync(join(root, path));
+    const config = typeConfig(path);
+    if (config === null) {
+      if (exists) throw new Error(`No TypeScript owner for ${path}; declare its scoped check before committing.`);
+      continue; // Deleted with its whole project: nothing is left to check.
+    }
+    configs.add(config);
+    if (!exists) continue;
     const isTest = /\.test\.tsx?$/.test(path);
     if (isTest) tests.add(path);
     else {
