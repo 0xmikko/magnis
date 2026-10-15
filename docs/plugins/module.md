@@ -118,7 +118,9 @@ The constructor receives `PluginDeps = { graph, ctx, util, rpc, log }`:
 - **`rpc`** — `execute<T>(method, params?)`, cross-module RPC over the host
   router. Allowed targets are declared in the manifest `[permissions]` `call`
   list. (LinkedIn uses it to call `contacts.get_social_tracking_by_handle`,
-  etc.)
+  etc.) `ensure({ schemaId, items })` asks the module that owns `schemaId`
+  for refs to its entities, declared by your next `applyBatch` (see the
+  cross-module section).
 - **`graph: GraphService`** — the graph API, below.
 
 **The graph API:**
@@ -139,11 +141,18 @@ The constructor receives `PluginDeps = { graph, ctx, util, rpc, log }`:
   `createEntity` does NOT take an external id — it always mints `local:<id>`.
   The issuer-key lane is `applyBatch`, whose `BatchEntityInput.externalId` IS
   the resolver, so the second sync of the same provider record attaches instead
-  of duplicating.
+  of duplicating. A declared entity's external id is its own UUID, so it is
+  found by its key instead: `findByCanonicalKeys({ schemaId, canonicalKeys })`.
 - **Links** — `addLink`, `deleteLink`, `listLinksForEntity`. `addLink`
   on an EXISTING edge does not rewrite its dictionary — that is what makes
   re-ingest idempotent; the sync lane refreshes it. Only the host's reserved
-  `sources[]` unions across observers.
+  `sources[]` unions across observers. `listLinkPeriods` pages every period
+  of one link kind from one entity, newest `validFrom` first, ended ones
+  included.
+- **Bytes** — `bytesPut({ text })` stores up to 3 MiB of UTF-8 under its
+  SHA-256 and answers the hash; an entity names it in
+  `properties.contentHash`, and `bytesRead` reads a window of it cut on a
+  UTF-8 boundary. Both need the `bytes` host grant.
 - **Batch/merge** — `applyBatch(GraphBatchInput)` (atomic entities+links
   fragment — the bulk-ingest primitive), `mergePreview`, `mergeExecute`.
 
@@ -234,6 +243,27 @@ exactly as your own reads are.
 is **idempotent** (callers
 retry) and returns the id(s) the caller needs to link. `email.ensure_address`
 is find-or-create: same address in, same entity id out.
+
+**Declaring inside your own batch: `rpc.ensure`.** When the foreign entities
+must commit in the same transaction as your page, call
+`rpc.ensure({ schemaId, items })` instead. The host calls the owner's
+`<schemaId>.ensure` RPC, which reads neither the Graph nor the network and
+answers `{ refs, fragment }`: one ref per item, in order, and the
+declarations of those entities. The host keeps the fragment and hands you
+`{ refs }`; your next `applyBatch`, from the root request, applies the
+collected declarations with your own, so your links can point at the refs.
+Telegram declares a message's links this way:
+
+```ts
+const { refs } = await this.rpc.ensure({ schemaId: "web.link", items: urls.map((url) => ({ url })) });
+await this.graph.applyBatch({ entities: [], refs: [], links: [], fragment: {
+  entities: [],
+  links: refs.map((to) => ({ from: message, to, kind: "references", /* … */ })),
+} });
+```
+
+It needs `call = ["web.link.ensure"]` and the `references` link grant; the
+owner exposes `@rpc("link.ensure")` (see `modules/web`).
 
 ---
 

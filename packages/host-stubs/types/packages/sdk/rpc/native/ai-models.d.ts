@@ -73,6 +73,17 @@ export declare const aiModelEmbeddingDirectoryContract: import("../contract.js")
     revision: z.ZodString;
     available: z.ZodBoolean;
 }, z.core.$strict>>, "required">;
+export declare const aiModelDecisionDirectoryContract: import("../contract.js").RpcContract<"ai_models.directory.decision.list", z.ZodObject<{}, z.core.$strict>, z.ZodArray<z.ZodObject<{
+    id: z.ZodString;
+    private: z.ZodBoolean;
+    displayName: z.ZodString;
+    dataBoundary: z.ZodEnum<{
+        device_only: "device_only";
+        cloud_allowed: "cloud_allowed";
+    }>;
+    providerConnectionId: z.ZodNullable<z.ZodString>;
+    available: z.ZodBoolean;
+}, z.core.$strict>>, "required">;
 export declare const aiModelGlobalLanguageDefaultContract: import("../contract.js").RpcContract<"ai_models.directory.language_default.get", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
     modelId: z.ZodNullable<z.ZodString>;
 }, z.core.$strict>, "required">;
@@ -234,6 +245,17 @@ export declare const aiModelsContracts: {
             l2: "l2";
         }>;
         revision: z.ZodString;
+        available: z.ZodBoolean;
+    }, z.core.$strict>>, "required">;
+    readonly "ai_models.directory.decision.list": import("../contract.js").RpcContract<"ai_models.directory.decision.list", z.ZodObject<{}, z.core.$strict>, z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        private: z.ZodBoolean;
+        displayName: z.ZodString;
+        dataBoundary: z.ZodEnum<{
+            device_only: "device_only";
+            cloud_allowed: "cloud_allowed";
+        }>;
+        providerConnectionId: z.ZodNullable<z.ZodString>;
         available: z.ZodBoolean;
     }, z.core.$strict>>, "required">;
     readonly "ai_models.directory.language_default.get": import("../contract.js").RpcContract<"ai_models.directory.language_default.get", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{

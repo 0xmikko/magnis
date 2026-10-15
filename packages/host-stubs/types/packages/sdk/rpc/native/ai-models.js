@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AiModelSchema, AiProviderSchema, CodexAuthStatusSchema, EmbeddingModelInfoSchema, LlmModelInfoSchema, ModelCatalogPageSchema, ModelDefaultSchema, ProviderCatalogModelSchema, UserLanguagePreferenceSchema, } from "../../core/ai-model.js";
+import { AiModelSchema, AiProviderSchema, CodexAuthStatusSchema, DecisionModelInfoSchema, EmbeddingModelInfoSchema, LlmModelInfoSchema, ModelCatalogPageSchema, ModelDefaultSchema, ProviderCatalogModelSchema, UserLanguagePreferenceSchema, } from "../../core/ai-model.js";
 import { defineRpcContract } from "../contract.js";
 export const aiModelLanguageDirectoryContract = defineRpcContract({
     method: "ai_models.directory.language.list",
@@ -10,6 +10,11 @@ export const aiModelEmbeddingDirectoryContract = defineRpcContract({
     method: "ai_models.directory.embedding.list",
     input: z.object({}),
     output: z.array(EmbeddingModelInfoSchema),
+});
+export const aiModelDecisionDirectoryContract = defineRpcContract({
+    method: "ai_models.directory.decision.list",
+    input: z.strictObject({}),
+    output: z.array(DecisionModelInfoSchema),
 });
 export const aiModelGlobalLanguageDefaultContract = defineRpcContract({
     method: "ai_models.directory.language_default.get",
@@ -59,6 +64,7 @@ export const aiModelsContracts = {
     }),
     "ai_models.directory.language.list": aiModelLanguageDirectoryContract,
     "ai_models.directory.embedding.list": aiModelEmbeddingDirectoryContract,
+    "ai_models.directory.decision.list": aiModelDecisionDirectoryContract,
     "ai_models.directory.language_default.get": aiModelGlobalLanguageDefaultContract,
     "ai_models.preferences.language.get": aiModelLanguagePreferenceGetContract,
     "ai_models.preferences.language.set": aiModelLanguagePreferenceSetContract,

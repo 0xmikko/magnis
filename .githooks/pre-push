@@ -2,17 +2,18 @@
 # Managed by 0_agents code-production. Do not edit in the consumer repository.
 set -euo pipefail
 
-# Owner-authorized catalog extension; @tested-by: tst_scripts_agent_stack_002.
-# Reject every forbidden ref before the managed cached-receipt early return.
+ROOT="$(git rev-parse --show-toplevel)"
+PLANCTL="$ROOT/.agents/code-production/runtime/planctl.ts"
+
+# main and the integration branch move only through the owner's merge: every
+# such ref is refused before any receipt is consulted.
+BASE="$(git -C "$ROOT" config --get code-production.base || true)"
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
-  if [[ "$remote_ref" == "refs/heads/main" ]]; then
-    echo "direct push to main is not allowed — main moves only via a reviewed PR from staging." >&2
+  if [[ "$remote_ref" == "refs/heads/main" || ( -n "$BASE" && "$remote_ref" == "refs/heads/$BASE" ) ]]; then
+    echo "direct push to ${remote_ref#refs/heads/} is not allowed — ${remote_ref#refs/heads/} moves only via a reviewed PR." >&2
     exit 1
   fi
 done
-
-ROOT="$(git rev-parse --show-toplevel)"
-PLANCTL="$ROOT/.agents/code-production/runtime/planctl.ts"
 
 while IFS= read -r plan; do
   [ -n "$plan" ] || continue

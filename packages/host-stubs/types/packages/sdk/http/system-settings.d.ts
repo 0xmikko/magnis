@@ -424,6 +424,7 @@ export declare const listAiProviderConnectionsContract: import("./contract.js").
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -481,6 +482,7 @@ export declare const listAiProviderSettingsContract: import("./contract.js").Htt
             "openai-compatible": "openai-compatible";
             ollama: "ollama";
             "local-fastembed": "local-fastembed";
+            "system-one": "system-one";
         }>;
         authKind: z.ZodEnum<{
             none: "none";
@@ -500,6 +502,7 @@ export declare const saveAiProviderConnectionContract: import("./contract.js").H
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -523,6 +526,7 @@ export declare const saveAiProviderConnectionContract: import("./contract.js").H
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -558,12 +562,14 @@ export declare const listAiModelCatalogCandidatesContract: import("./contract.js
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     displayName: z.ZodString;
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
@@ -633,13 +639,29 @@ export declare const listAiModelCatalogCandidatesContract: import("./contract.js
 export declare const materializeAiModelContract: import("./contract.js").HttpContract<"POST", "/api/settings/ai-models/runtime/models", z.ZodObject<{
     logicalModelId: z.ZodString;
     providerConnectionId: z.ZodString;
-    sourceId: z.ZodString;
+    sourceId: z.ZodOptional<z.ZodString>;
     physicalModelId: z.ZodString;
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
-}, z.core.$strip>, z.ZodObject<{
+    explicit: z.ZodOptional<z.ZodObject<{
+        displayName: z.ZodString;
+        dataBoundary: z.ZodEnum<{
+            device_only: "device_only";
+            cloud_allowed: "cloud_allowed";
+        }>;
+        price: z.ZodObject<{
+            inputPerMtokMicros: z.ZodNumber;
+            outputPerMtokMicros: z.ZodNumber;
+            cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>, z.ZodObject<{
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -682,6 +704,7 @@ export declare const materializeAiModelContract: import("./contract.js").HttpCon
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -701,6 +724,7 @@ export declare const materializeAiModelContract: import("./contract.js").HttpCon
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -771,6 +795,7 @@ export declare const setAiModelPrivateContract: import("./contract.js").HttpCont
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -790,6 +815,7 @@ export declare const setAiModelPrivateContract: import("./contract.js").HttpCont
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -860,6 +886,7 @@ export declare const setAiModelEnabledContract: import("./contract.js").HttpCont
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -879,6 +906,7 @@ export declare const setAiModelEnabledContract: import("./contract.js").HttpCont
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -1029,6 +1057,7 @@ export declare const listConfiguredAiModelsContract: import("./contract.js").Htt
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -1048,6 +1077,7 @@ export declare const listConfiguredAiModelsContract: import("./contract.js").Htt
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -1680,6 +1710,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -1699,6 +1730,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -1898,6 +1930,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -1954,6 +1987,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
             "openai-compatible": "openai-compatible";
             ollama: "ollama";
             "local-fastembed": "local-fastembed";
+            "system-one": "system-one";
         }>;
         authKind: z.ZodEnum<{
             none: "none";
@@ -1972,6 +2006,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -1995,6 +2030,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -2025,12 +2061,14 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     displayName: z.ZodString;
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
@@ -2099,13 +2137,29 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
 }, z.core.$strip>>>, import("./contract.js").HttpContract<"POST", "/api/settings/ai-models/runtime/models", z.ZodObject<{
     logicalModelId: z.ZodString;
     providerConnectionId: z.ZodString;
-    sourceId: z.ZodString;
+    sourceId: z.ZodOptional<z.ZodString>;
     physicalModelId: z.ZodString;
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
-}, z.core.$strip>, z.ZodObject<{
+    explicit: z.ZodOptional<z.ZodObject<{
+        displayName: z.ZodString;
+        dataBoundary: z.ZodEnum<{
+            device_only: "device_only";
+            cloud_allowed: "cloud_allowed";
+        }>;
+        price: z.ZodObject<{
+            inputPerMtokMicros: z.ZodNumber;
+            outputPerMtokMicros: z.ZodNumber;
+            cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>, z.ZodObject<{
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -2148,6 +2202,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -2167,6 +2222,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -2236,6 +2292,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -2255,6 +2312,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -2324,6 +2382,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -2343,6 +2402,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{

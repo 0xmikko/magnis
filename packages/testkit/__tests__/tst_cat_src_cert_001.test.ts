@@ -146,6 +146,26 @@ describe("tst_cat_src_receipt_001", () => {
     );
   });
 
+  test("a production Source that only answers commands certifies without auth; a polling one does not", () => {
+    const commandOnly: SourceAccountCompatibilityInput = {
+      auth: null, identityRule: "source_id", credentialKeys: [], mintedCredentialKeys: [],
+      surfaces: [{ name: "web", cursorTerminalNull: null, progress: null, receiverInterfaceHash: v1ReceiverInterfaceHash("web") }],
+    };
+    const web: SourceCertificationReceipt = {
+      ...receipt(), sourceId: "web", delivery: "none", auth: null, surfaces: ["web"],
+      accountCompatibility: { hash: accountCompatibilityHash(commandOnly), migratesFrom: [] },
+      advertisedTools: [], callableOperations: ["initialize", "magnis.execute", "tools/list"],
+    };
+    expect(decodeSourceCertificationReceipt(encodeSourceCertificationReceipt(web))).toEqual(web);
+    expect(() => encodeSourceCertificationReceipt({ ...web, delivery: "poll" })).toThrow(
+      "production module_sync receipt must declare auth unless its delivery is none",
+    );
+    expect(() => accountCompatibilityHash({
+      ...commandOnly,
+      surfaces: commandOnly.surfaces.map((surface) => ({ ...surface, cursorTerminalNull: "retain" as const })),
+    })).toThrow("needs both a cursor rule and progress, or neither");
+  });
+
   test("account compatibility hashing is order-normalized and changes with account meaning", () => {
     const input = compatibilityInput();
     const reordered: SourceAccountCompatibilityInput = {
@@ -162,7 +182,7 @@ describe("tst_cat_src_receipt_001", () => {
       ...input,
       surfaces: input.surfaces.map((surface) => ({
         ...surface,
-        progress: { ...surface.progress, liveFence: "subscription_ack" },
+        progress: surface.progress === null ? null : { ...surface.progress, liveFence: "subscription_ack" as const },
       })),
     })).not.toBe(accountCompatibilityHash(input));
   });

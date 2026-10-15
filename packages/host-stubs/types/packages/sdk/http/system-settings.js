@@ -242,12 +242,27 @@ export const listAiModelCatalogCandidatesContract = defineHttpContract({
 export const materializeAiModelContract = defineHttpContract({
     method: "POST",
     path: "/api/settings/ai-models/runtime/models",
-    input: z.object({
+    input: z.strictObject({
         logicalModelId: z.string().min(1),
         providerConnectionId: z.string().min(1),
-        sourceId: z.string().min(1),
+        sourceId: z.string().min(1).optional(),
         physicalModelId: z.string().min(1),
-        capability: z.enum(["language", "embedding"]),
+        capability: AiCatalogCandidateInfoSchema.shape.capability,
+        explicit: AiCatalogCandidateInfoSchema.pick({
+            displayName: true,
+            dataBoundary: true,
+            price: true,
+        }).strict().optional(),
+    }).superRefine((input, context) => {
+        if (input.explicit !== undefined) {
+            if (input.sourceId !== undefined || input.capability !== "decision") {
+                context.addIssue({ code: "custom", path: ["explicit"],
+                    message: "Explicit configuration requires decision capability and no catalog source" });
+            }
+        }
+        else if (input.sourceId === undefined) {
+            context.addIssue({ code: "custom", path: ["sourceId"], message: "A catalog source or explicit decision configuration is required" });
+        }
     }),
     output: AiLogicalModelAdminInfoSchema,
 });

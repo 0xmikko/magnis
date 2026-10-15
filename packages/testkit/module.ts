@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { vi, type Mock } from "vitest";
 import { nilId, PersistentEntityIdSchema, EntityReadSchema, EntityExtrasSchema } from "@magnis/sdk";
-import { definePlugin, pageLimitMax } from "@magnis/plugin-sdk";
+import { bytesPutMax, definePlugin, linkPeriodLimitMax, pageLimitMax } from "@magnis/plugin-sdk";
 import type {
   GraphService,
   PluginDeps,
@@ -72,6 +72,18 @@ const HOST_CHECKS: Partial<Record<string, (...args: unknown[]) => void>> = {
     const limit = (params as { limit?: unknown } | undefined)?.limit;
     if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1 || limit > pageLimitMax) {
       throw new Error(`migration limit must be between 1 and ${String(pageLimitMax)}`);
+    }
+  },
+  listLinkPeriods: (params) => {
+    const limit = (params as { limit?: unknown } | undefined)?.limit;
+    if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1 || limit > linkPeriodLimitMax) {
+      throw new Error(`link period limit must be between 1 and ${String(linkPeriodLimitMax)}`);
+    }
+  },
+  bytesPut: (params) => {
+    const text = (params as { text?: unknown } | undefined)?.text;
+    if (typeof text !== "string" || new TextEncoder().encode(text).length > bytesPutMax) {
+      throw new Error("bytesPut takes at most 3 MiB of UTF-8 text");
     }
   },
 };

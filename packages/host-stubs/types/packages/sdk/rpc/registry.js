@@ -21,7 +21,6 @@ import { sourceContracts } from "./native/source.js";
 import { subagentsContracts } from "./native/subagents.js";
 import { triggersContracts } from "./native/triggers.js";
 import { userEventsContracts } from "./native/user-events.js";
-import { webContracts } from "./native/web.js";
 /**
  * The checked-in native method surface. Each method and its schemas are
  * declared in exactly one `native/<domain>.ts`; this map composes the domains
@@ -51,5 +50,4 @@ export const rpcContracts = {
     ...subagentsContracts,
     ...triggersContracts,
     ...userEventsContracts,
-    ...webContracts,
 };

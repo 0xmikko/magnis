@@ -226,7 +226,8 @@ export const AddLinkParamsSchema = z.strictObject({
     validFrom: DateTimeSchema.exactOptional(),
     validUntil: DateTimeSchema.exactOptional(),
 }).refine((link) => validPeriod({ validFrom: link.validFrom ?? null, validUntil: link.validUntil ?? null }), "validUntil must follow validFrom");
-/** `fileRegister`: a downloadable media file; its bytes never cross the plugin boundary. */
+/** `fileRegister`: a downloadable media file; its bytes never cross the
+ * plugin boundary, and a module never names a path for them. */
 export const FileRegisterParamsSchema = z.strictObject({
     externalId: z.string(),
     parentExternalId: z.string(),
@@ -234,20 +235,54 @@ export const FileRegisterParamsSchema = z.strictObject({
     name: z.string().exactOptional(),
     mimeType: z.string(),
     sizeBytes: z.int().nonnegative().exactOptional(),
-    localPath: z.string().exactOptional(),
     cloudUrl: z.string().exactOptional(),
     sourceRef: JsonValueSchema.exactOptional(),
     sourceModule: z.string(),
     sourceSurface: z.string(),
     download: z.boolean().exactOptional(),
 });
-/** `webRegister`: a URL the host normalizes; one it cannot is skipped. */
-export const WebRegisterParamsSchema = z.strictObject({
-    url: z.string(),
-    // A skipped URL never uses its parent. The host validates the persistent
-    // reference after URL admission, preserving per-row skip behavior.
-    parentEntityId: IdSchema.exactOptional(),
-    linkKind: z.string().exactOptional(),
+/** SHA-256 of stored bytes: 64 lowercase hex characters, no prefix. */
+export const ContentHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
+/** What the host byte store answers after a write. */
+export const StoredBytesSchema = z.strictObject({
+    contentHash: ContentHashSchema,
+    sizeBytes: z.int().nonnegative(),
+});
+/** `graph.bytesPut`: UTF-8 text of at most 3 MiB, stored once under its hash. */
+export const BytesPutParamsSchema = z.strictObject({
+    text: z.string(),
+});
+/** `graph.bytesRead`: a window of the bytes that an entity of the calling
+ * user names in `properties.contentHash`. */
+export const BytesReadParamsSchema = z.strictObject({
+    entityId: IdSchema,
+    offset: z.int().nonnegative(),
+    length: z.int().positive(),
+});
+/** At most 1 MiB, cut on a UTF-8 boundary; `length` is the real byte count
+ * and `sizeBytes` the full size of the stored content. */
+export const BytesReadResultSchema = z.strictObject({
+    text: z.string(),
+    offset: z.int().nonnegative(),
+    length: z.int().nonnegative(),
+    sizeBytes: z.int().nonnegative(),
+});
+/** `graph.findByCanonicalKeys`: the caller's entity ids of one schema, in
+ * input order, null where absent. A declared entity's external id is its own
+ * UUID, so this is how a module finds it by its key. */
+export const FindByCanonicalKeysParamsSchema = z.strictObject({
+    schemaId: z.string().min(1),
+    canonicalKeys: z.array(z.string().min(1)).max(1_000),
+});
+/** `graph.listLinkPeriods`: the periods of one link kind from one entity of
+ * the calling user, newest `validFrom` first; `notAfter` keeps periods that
+ * start at or before that moment. */
+export const ListLinkPeriodsParamsSchema = z.strictObject({
+    fromEntityId: IdSchema,
+    kind: z.string().min(1),
+    notAfter: DateTimeSchema.nullable(),
+    offset: pageBoundSchema,
+    limit: z.int().min(1).max(100),
 });
 /** `graph.listEntitiesByPropertyField`. */
 export const ListEntitiesByPropertyFieldParamsSchema = z.strictObject({

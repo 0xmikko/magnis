@@ -33,8 +33,6 @@ function ingestGraph(): G {
         linksAdded: 0,
         droppedKeys: [], resolved: [],
       }),
-    webRegister: () => Promise.resolve("web-id"),
-    webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
     findByExternalId: () => Promise.resolve(null),
     findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? entityId("chat-42") : null)),
     getEntities: () => Promise.resolve([{ ...entity(entityId("chat-42"), "Chat", { schemaId: "telegram.chat" }), properties: { chat_id: 42 } }]),

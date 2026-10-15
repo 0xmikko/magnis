@@ -25,7 +25,8 @@ export interface FileDetails {
   name?: string | null;
   mime_type: string;
   size_bytes?: number | null;
-  local_path?: string | null;
+  /** The SHA-256 of the bytes in the host byte store, once they are stored. */
+  contentHash?: string | null;
   cloud_url?: string | null;
   source_module: string;
   source_surface?: string;

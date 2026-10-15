@@ -205,6 +205,7 @@ export const AiProviderAdapterIdSchema = z.enum([
     "openai-compatible",
     "ollama",
     "local-fastembed",
+    "system-one",
 ]);
 export const AiPriceInfoSchema = z.object({
     inputPerMtokMicros: z.number().int().nonnegative(),
@@ -293,7 +294,7 @@ export const AiCatalogCandidateInfoSchema = z.object({
     adapterId: AiProviderAdapterIdSchema,
     physicalModelId: z.string().min(1),
     displayName: z.string().min(1),
-    capability: z.enum(["language", "embedding"]),
+    capability: z.enum(["language", "embedding", "decision"]),
     dataBoundary: z.enum(["device_only", "cloud_allowed"]),
     contextTokens: z.number().int().positive().nullable(),
     languageCapabilities: AiLanguageCapabilitiesSchema.nullable(),
@@ -312,6 +313,14 @@ export const AiLogicalModelAdminInfoSchema = AiCatalogCandidateInfoSchema.omit({
     available: z.boolean().optional(),
     unavailableReason: z.string().nullable().optional(),
 });
+/** Safe decision directory projection of the configured logical model. */
+export const DecisionModelInfoSchema = AiLogicalModelAdminInfoSchema.pick({
+    id: true,
+    displayName: true,
+    private: true,
+    dataBoundary: true,
+    providerConnectionId: true,
+}).extend({ available: z.boolean() }).strict();
 export const AiCallAccountingSchema = z.object({
     modelId: z.string().min(1),
     tokens: TokenBreakdownSchema,

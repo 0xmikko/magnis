@@ -4,7 +4,7 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
-import type { GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
+import type { EnsureRequest, GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { entity } from "@magnis/declare";
 import { descriptorFrom } from "@magnis/declare/derive";
@@ -53,14 +53,18 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     getEntities: (ids) => Promise.resolve(ids.map((id) => ({
       ...storedEntity(id, "Magnis Builders", { schemaId: "telegram.chat" }), syncEnabled: true, syncRevision: "0",
     }))),
-    // The message carries a link and a photo: a link becomes a web entity of
-    // its own, and downloadable media becomes a file entity.
-    webRegister: () => Promise.resolve("web-1"),
-    webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-1")),
+    // The message carries a link and a photo: the Web module declares the
+    // link through ensure, and downloadable media becomes a file entity.
     fileRegister: () => Promise.resolve("file-1"),
     fileRegisterBatch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-1")),
   });
-  const mod = mountModule(TelegramModule, { graph }).module;
+  const rpc = {
+    execute: () => Promise.reject(new Error("unexpected rpc.execute")),
+    ensure: (request: EnsureRequest) => Promise.resolve({
+      refs: request.items.map((item) => ({ kind: "canonical" as const, schemaId: "web.link", canonicalKey: (item as { url: string }).url })),
+    }),
+  };
+  const mod = mountModule(TelegramModule, { graph, rpc }).module;
   await mod.ingest({
     envelopes: [
       base({

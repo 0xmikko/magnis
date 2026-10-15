@@ -315,6 +315,7 @@ export declare const AiProviderAdapterIdSchema: z.ZodEnum<{
     "openai-compatible": "openai-compatible";
     ollama: "ollama";
     "local-fastembed": "local-fastembed";
+    "system-one": "system-one";
 }>;
 export type AiProviderAdapterId = z.output<typeof AiProviderAdapterIdSchema>;
 export declare const AiPriceInfoSchema: z.ZodObject<{
@@ -343,6 +344,7 @@ export declare const AiProviderConnectionInfoSchema: z.ZodObject<{
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     baseUrl: z.ZodNullable<z.ZodURL>;
     enabled: z.ZodBoolean;
@@ -390,6 +392,7 @@ export declare const AiProviderDescriptorSchema: z.ZodObject<{
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     authKind: z.ZodEnum<{
         none: "none";
@@ -491,6 +494,7 @@ export declare const AiProviderSettingsSnapshotSchema: z.ZodObject<{
             "openai-compatible": "openai-compatible";
             ollama: "ollama";
             "local-fastembed": "local-fastembed";
+            "system-one": "system-one";
         }>;
         authKind: z.ZodEnum<{
             none: "none";
@@ -523,12 +527,14 @@ export declare const AiCatalogCandidateInfoSchema: z.ZodObject<{
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     displayName: z.ZodString;
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
@@ -639,6 +645,7 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
+        decision: "decision";
     }>;
     displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
@@ -658,6 +665,7 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
         "openai-compatible": "openai-compatible";
         ollama: "ollama";
         "local-fastembed": "local-fastembed";
+        "system-one": "system-one";
     }>;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
@@ -683,6 +691,19 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
     unavailableReason: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strip>;
 export type AiLogicalModelAdminInfo = z.output<typeof AiLogicalModelAdminInfoSchema>;
+/** Safe decision directory projection of the configured logical model. */
+export declare const DecisionModelInfoSchema: z.ZodObject<{
+    id: z.ZodString;
+    private: z.ZodBoolean;
+    displayName: z.ZodString;
+    dataBoundary: z.ZodEnum<{
+        device_only: "device_only";
+        cloud_allowed: "cloud_allowed";
+    }>;
+    providerConnectionId: z.ZodNullable<z.ZodString>;
+    available: z.ZodBoolean;
+}, z.core.$strict>;
+export type DecisionModelInfo = z.output<typeof DecisionModelInfoSchema>;
 export declare const AiCallAccountingSchema: z.ZodObject<{
     modelId: z.ZodString;
     tokens: z.ZodObject<{

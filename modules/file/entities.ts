@@ -26,7 +26,7 @@ export const object = entity(
     name: z.string().nullish(),
     mime_type: z.string(),
     size_bytes: z.number().nullish(),
-    local_path: z.string().nullish(),
+    contentHash: z.string().nullish(),
     cloud_url: z.string().nullish(),
     source_module: z.string(),
     source_surface: z.string().optional(),

@@ -40,7 +40,7 @@ const ID_T = "00000000-0000-0000-0000-0000000000a1";
 function detail(id: string, schemaId = "file.object", properties: JsonObject = {}): EntityWithLinks {
   return { entity: entity(id, "f", { schemaId, properties }), links: [] };
 }
-const DETAILS = { mime_type: "image/png", source_module: "uploads", source_ref: {}, local_path: "2020-01/uploads/a.png" };
+const DETAILS = { mime_type: "image/png", source_module: "uploads", source_ref: {}, contentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" };
 
 describe("file.attach (per-user isolation + allowed link kinds)", () => {
   it("attaches when both entities are owned and file_id is a file.object", async () => {
@@ -97,7 +97,7 @@ describe("file.get (ownership + schema + URL)", () => {
     expect(res.mime_type).toBe("image/png");
   });
 
-  it("uses cloud_url when there is no local_path", async () => {
+  it("uses cloud_url when there is no contentHash", async () => {
     const g = makeGraph();
     spy(g, "getEntityFull").mockResolvedValueOnce(
       detail(ID_F, "file.object", { mime_type: "application/pdf", source_module: "s", source_ref: {}, cloud_url: "https://cdn/x.pdf" }),
@@ -115,13 +115,36 @@ describe("file.get (ownership + schema + URL)", () => {
   });
 });
 
+/**
+ * @test-id: tst_file_hash_002
+ * @covers: modules/file/module/helpers.ts::hasContent,resolveUrl
+ * @deterministic: yes
+ *
+ * The web-source plan (`docs/plans/web-source.md` in magnis-app, Stage D2-S4):
+ * a file's bytes live in the host byte store, so a file with a `contentHash`
+ * is available and served by its entity id; one with neither a hash nor a
+ * cloud URL is not.
+ */
+describe("tst_file_hash_002 availability comes from contentHash", () => {
+  it("a file with only contentHash is available, and one with neither is not", async () => {
+    const g = makeGraph();
+    spy(g, "listEntitiesWindow").mockResolvedValue(page([
+      entity("h1", "a.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, contentHash: "a".repeat(64) } }),
+      entity("h2", "b.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {} } }),
+      entity("h3", "c.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, contentHash: null, cloud_url: "https://cdn/c.png" } }),
+    ]));
+    const res = await makeModule(g).list({});
+    expect(res.items.map((item) => [item.entity_id, item.url])).toEqual([[entityId("h1"), `/files/${entityId("h1")}`], [entityId("h3"), "https://cdn/c.png"]]);
+  });
+});
+
 describe("file.list (filters + content skip)", () => {
   it("filters by mime_prefix and skips rows without content", async () => {
     const g = makeGraph();
     // S1: the dictionary rides each entity of the window page.
     spy(g, "listEntitiesWindow").mockResolvedValue(page([
-      entity("i1", "a.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, local_path: "a" } }),
-      entity("i2", "b.pdf", { schemaId: "file.object", properties: { mime_type: "application/pdf", source_module: "u", source_ref: {}, local_path: "b" } }),
+      entity("i1", "a.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, contentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } }),
+      entity("i2", "b.pdf", { schemaId: "file.object", properties: { mime_type: "application/pdf", source_module: "u", source_ref: {}, contentHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }),
       entity("i3", "c.jpg", { schemaId: "file.object", properties: { mime_type: "image/jpeg", source_module: "u", source_ref: {} } }), // no content
     ]));
     const res = await makeModule(g).list({ mime_prefix: "image/" });
@@ -144,8 +167,8 @@ describe("tst_cat_entity_one_type_006 — file speaks the SDK shapes", () => {
   it("tst_cat_entity_one_type_006 list reads window entities and filters by a parent link's `from`", async () => {
     const g = makeGraph();
     spy(g, "listEntitiesWindow").mockResolvedValue(page([
-      entity("i1", "a", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "a" } }),
-      entity("i2", "b", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "b" } }),
+      entity("i1", "a", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, contentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } }),
+      entity("i2", "b", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, contentHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }),
     ]));
     spy(g, "listLinksForEntity").mockImplementation((id: string) =>
       Promise.resolve(id === entityId("i1") ? [link("parentX", "i1", "file.attachment")] : [link("other", "i2", "file.attachment")]),

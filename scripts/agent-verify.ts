@@ -79,8 +79,8 @@ function commit(): void {
       if (!path.endsWith(".d.ts") && !path.includes("/__tests__/") && !vitestConfigs.has(path)) lint.push(path);
     }
   }
-  const productChanged = paths.some((path) => /^(plugins|packages)\/.*\.(ts|tsx)$/.test(path));
-  if (productChanged && ![...tests].some((path) => /^(plugins|packages)\//.test(path))) {
+  const productChanged = paths.some((path) => /^(modules|sources|packages)\/.*\.(ts|tsx)$/.test(path));
+  if (productChanged && ![...tests].some((path) => /^(modules|sources|packages)\//.test(path))) {
     throw new Error("Product change has no scoped behavior target; stage its regression test before committing.");
   }
   const rootConfigChange = paths.some((path) => path === "tsconfig.base.json" || path === "bun.lock");

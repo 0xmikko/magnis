@@ -23,7 +23,7 @@
  * @legacy-id: tst_be_tgiso_006_ingest_scoped_by_user
  * @legacy-id: tst_be_tgiso_008_delete_scoped_by_user
  */
-import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import type { EnsureRequest, EnsureResult, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { entityId, entityRead, entityExtras, entity, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
@@ -63,6 +63,14 @@ const admittedGraph: GraphOverrides = {
   moduleSettings: () => Promise.resolve({ newChatSync: "all" }),
   listSyncMigrationEntities: () => Promise.resolve({ items: [], next: null }),
   syncState: syncStateDouble(),
+};
+
+/** A Web module that declares one canonical link per URL, as `web.link.ensure` does. */
+const webRpc = {
+  execute: () => Promise.reject(new Error("unexpected rpc.execute")),
+  ensure: (request: EnsureRequest): Promise<EnsureResult> => Promise.resolve({
+    refs: request.items.map((item) => ({ kind: "canonical" as const, schemaId: "web.link", canonicalKey: (item as { url: string }).url })),
+  }),
 };
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
@@ -115,7 +123,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       admitSyncEntities: (subjects) => Promise.resolve(enabled ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
       deleteEntity: () => Promise.resolve(),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const deletion: SyncEnvelope = { ...messageEnvelope("snapshot", { message_id: 7 }), kind: "delete", remoteId: "tg:deleted:7" };
     await expect(module.ingest({ envelopes: [deletion] })).resolves.toEqual({ droppedRemoteIds: [], triggerChecks: [], ...NOTHING_STATED });
     expect(graph.spies.admitSyncEntities).toHaveBeenCalledExactlyOnceWith([{ entityId: chat.id, remoteIds: ["tg:deleted:7"] }]);
@@ -133,7 +141,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       fileRegisterBatch: () => Promise.resolve(["file-id"]),
       updatePropertiesBatch: () => Promise.resolve(),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const envelope = messageEnvelope("snapshot", { ...messagePayload(), text: "Attached", media_type: "document", source_ref: { chat_id: 42, message_id: 7 } });
     await module.ingest({ envelopes: [envelope] });
     expect(graph.spies.applyBatch).toHaveBeenCalledTimes(syncEnabled ? 1 : 0);
@@ -157,9 +165,8 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       endLink: () => Promise.reject(new Error("stopped membership must not change")),
       updatePropertiesBatch: () => Promise.reject(new Error("stopped metadata must not change")),
       fileRegisterBatch: () => Promise.reject(new Error("stopped attachment must not be registered")),
-      webRegisterBatch: () => Promise.reject(new Error("stopped link must not be registered")),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const envelopes: SyncEnvelope[] = [
       { ...messageEnvelope("live", { entity_type: "chat", chat_id: 42, title: "Overwritten", type: "private", is_pinned: true }), remoteId: "tg:chat:42" },
       messageEnvelope("live", { ...messagePayload(), media_type: "document", source_ref: { chat_id: 42, message_id: 7 } }),
@@ -169,7 +176,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     ];
     await expect(module.ingest({ generation: "initial:row:1", envelopes })).resolves.toMatchObject({ droppedRemoteIds: [], triggerChecks: [], excluded: [] });
     expect(graph.spies.admitSyncEntities).toHaveBeenCalledExactlyOnceWith([{ entityId: stored.id, remoteIds: envelopes.map((item) => item.remoteId) }]);
-    for (const operation of ["applyBatch", "deleteEntity", "endLink", "updatePropertiesBatch", "fileRegisterBatch", "webRegisterBatch"] as const) {
+    for (const operation of ["applyBatch", "deleteEntity", "endLink", "updatePropertiesBatch", "fileRegisterBatch"] as const) {
       expect(graph.spies[operation]).not.toHaveBeenCalled();
     }
   });
@@ -190,7 +197,6 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [],
         });
       },
-      webRegisterBatch: (links) => Promise.resolve(links.map(() => "web-id")),
       updatePropertiesBatch: (updates) => {
         for (const { properties } of updates) {
           if (properties !== null && typeof properties === "object" && !Array.isArray(properties) && typeof properties.message_count === "number") {
@@ -200,7 +206,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         return Promise.resolve(undefined);
       },
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const live = messageEnvelope("live");
     await module.ingest({ envelopes: [live] });
     expect(count).toBe(197);
@@ -223,7 +229,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       applyBatch: () =>
         Promise.resolve({ ids: { self: entityId("self-id") }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
 
     await expect(
       module.onConnectionReady({ userId: "u1", sourceId: "telegram-ts", accountId: "a1", identityKey: "9001" }),
@@ -275,7 +281,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           droppedKeys: [], resolved: [],
         }),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const chat: SyncEnvelope = {
       ...messageEnvelope("snapshot", { entity_type: "chat", chat_id: 42, title: "Magnis Builders" }),
       remoteId: "tg:chat:42",
@@ -327,12 +333,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           linksAdded: fragment.links.length,
           droppedKeys: [], resolved: [],
         }),
-      webRegister: () => Promise.resolve("web-id"),
-      webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
       updateProperties: () => Promise.resolve(undefined),
       updatePropertiesBatch: () => Promise.resolve(undefined),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
 
     const result = await module.ingest({ envelopes: [messageEnvelope()] });
 
@@ -356,11 +360,11 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       "tg:msg:42:7:authored_by:acct:501",
       "acct:501:telegram.observed_participant:chat:42",
     ]);
-    expect(graph.spies.webRegisterBatch).toHaveBeenCalledWith([expect.objectContaining({
-      url: "https://example.test/demo",
-      parentEntityId: entityId("id:tg:msg:42:7"),
-      linkKind: "references",
-    })]);
+    expect(applyBatch.mock.calls[1]?.[0]).toMatchObject({ fragment: { links: [{
+      from: { kind: "id", schemaId: MESSAGE, id: entityId("id:tg:msg:42:7") },
+      to: { kind: "canonical", schemaId: "web.link", canonicalKey: "https://example.test/demo" },
+      kind: "references",
+    }] } });
   });
 
   /**
@@ -385,7 +389,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           droppedKeys: [], resolved: [],
         }),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const variants = [
       { text: `${"x".repeat(79)}😀 suffix`, name: `${"x".repeat(79)}😀` },
       { text: "😀".repeat(81), name: "😀".repeat(80) },
@@ -438,7 +442,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       updateProperties: () => Promise.resolve(undefined),
       updatePropertiesBatch: () => Promise.resolve(undefined),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const envelopes = Array.from({ length: messageCount }, (_, index) => ({
       ...messageEnvelope("snapshot", { ...messagePayload(), message_id: index + 1, text: "plain text" }),
       remoteId: `tg:msg:42:${String(index + 1)}`,
@@ -470,12 +474,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           linksAdded: fragment.links.length,
           droppedKeys: [], resolved: [],
         }),
-      webRegister: () => Promise.resolve("web-id"),
-      webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
       updateProperties: () => Promise.resolve(undefined),
       updatePropertiesBatch: () => Promise.resolve(undefined),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
 
     await module.ingest({ envelopes: [outgoing] });
 
@@ -505,8 +507,6 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           linksAdded: fragment.links.length,
           droppedKeys: [], resolved: [],
         }),
-      webRegister: () => Promise.resolve("web-id"),
-      webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
       // The live message's chat is known with Telegram's count; the message
       // raises it by one so the plan and the saved count move together.
       getEntities: (ids) => Promise.resolve(ids.map((id) => entity(id, "Chat 42", {
@@ -516,7 +516,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       updateProperties: () => Promise.resolve(),
       updatePropertiesBatch: () => Promise.resolve(),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
 
     const result = await module.ingest({ envelopes: [invalid, live] });
     expect(graph.spies.updatePropertiesBatch).toHaveBeenCalledWith([expect.objectContaining({
@@ -554,7 +554,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       findByExternalId: () => Promise.resolve(entityId("message-entity")),
       deleteEntity: () => Promise.resolve(undefined),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     await expect(module.ingest({ envelopes: [envelope] })).resolves.toEqual({
       droppedRemoteIds: [],
       triggerChecks: [],
@@ -618,7 +618,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [],
       }),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
+    const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const departurePayload: JsonObject = {
       entity_type: "telegram_chat",
       chat_id: 42,
@@ -743,5 +743,101 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     expect(firstBatch?.entities.find((item) => item.key === "tg:chat:1")?.properties).toMatchObject({ avatar_url: "/a/1.jpg" });
     expect(firstBatch?.entities.find((item) => item.key === "tg:chat:3")?.properties).toEqual({ chat_id: 3, title: "Chat 3" });
     expect(graph.spies.updatePropertiesBatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * @test-id: tst_cat_tg_web_ensure_001
+ * @scenario: scn_telegram_web_ensure_001
+ * @covers: modules/telegram/module/service.ts::ingest,sendMessage
+ * @deterministic: yes
+ * @fixtures: one page with two URLs and a photo; a batch send of two messages
+ *
+ * The web-source plan (`docs/plans/web-source.md` in magnis-app, Stage D2-S4):
+ * a message's URLs become `references` to links the Web module declares
+ * through `rpc.ensure`, in the page's last apply, with no Source call.
+ */
+describe("tst_cat_tg_web_ensure_001 — Telegram links a message to its URLs through ensure", () => {
+  it("a page with an existing and a new URL and a photo references both links, registers the photo and calls no Source", async () => {
+    const order: string[] = [];
+    const batches: GraphBatchInput[] = [];
+    const graph = mockGraph({
+      ...admittedGraph,
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
+      getEntities: (ids) => Promise.resolve(ids.map((id) => entity(entityId(id), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }))),
+      applyBatch: (batch) => {
+        order.push("applyBatch");
+        batches.push(batch);
+        return Promise.resolve({ ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`00000000-0000-4000-8000-00000000000${String(batches.length)}`)])), created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
+      },
+      fileRegisterBatch: (files) => { order.push("fileRegisterBatch"); return Promise.resolve(files.map(() => "file-id")); },
+      updatePropertiesBatch: () => { order.push("updatePropertiesBatch"); return Promise.resolve(); },
+      sourceCommand: () => Promise.reject(new Error("ingest must not call the Source")),
+    });
+    const requests: EnsureRequest[] = [];
+    const rpc = {
+      execute: () => Promise.reject(new Error("ingest calls no other module")),
+      ensure: (request: EnsureRequest): Promise<EnsureResult> => {
+        order.push("ensure");
+        requests.push(request);
+        return Promise.resolve({ refs: request.items.map((item) => ({ kind: "canonical" as const, schemaId: "web.link", canonicalKey: (item as { url: string }).url })) });
+      },
+    };
+    const module = mountModule(TelegramModule, { graph, rpc }).module;
+    const photo = messageEnvelope("snapshot", {
+      // The last address matches the message's URL pattern but is no URL: it never reaches ensure.
+      ...messagePayload(), text: "Known https://example.test/demo and new https://new.example/x?y=1 and again https://new.example/x?y=1, not http://999.999.999.999/",
+      media_type: "photo", source_ref: { chat_id: 42, message_id: 7 },
+    });
+
+    await module.ingest({ envelopes: [photo] });
+
+    expect(requests).toEqual([{ schemaId: "web.link", items: [{ url: "https://example.test/demo" }, { url: "https://new.example/x?y=1" }] }]);
+    expect(order).toEqual(["applyBatch", "fileRegisterBatch", "updatePropertiesBatch", "ensure", "applyBatch"]);
+    const message = { kind: "id", schemaId: MESSAGE, id: "00000000-0000-4000-8000-000000000001" };
+    expect(batches[1]).toEqual({
+      entities: [], refs: [], links: [],
+      fragment: {
+        entities: [],
+        links: ["https://example.test/demo", "https://new.example/x?y=1"].map((url) => ({
+          from: message, to: { kind: "canonical", schemaId: "web.link", canonicalKey: url }, kind: "references",
+          confidence: null, metadata: null, declaredBy: null, validFrom: null, validUntil: null,
+        })),
+      },
+    });
+    expect(graph.spies.sourceCommand).not.toHaveBeenCalled();
+  });
+
+  it("a batch send of two messages succeeds and leaves the sent messages' URLs to their sync page", async () => {
+    let sent = 0;
+    const chat = entityRead(entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }), entityExtras({ syncEnabled: true, syncRevision: "1" }));
+    const graph = mockGraph({
+      ...admittedGraph,
+      sourceCommand: () => { sent += 1; return Promise.resolve({ message_id: 100 + sent }); },
+      syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "acct", sync: null }] }) }),
+      listEntitiesByPropertyField: async () => page([entity("operator", "Me", { schemaId: "telegram.account", properties: { telegram_user_id: 9001, is_self: true }, source: { source: "telegram-ts", account: "acct", externalId: "tg:account:9001" } })]),
+      findByExternalId: (externalId) => Promise.resolve(externalId === "tg:chat:42" ? chat.entity.id : entityId(`sent:${externalId}`)),
+      getEntity: () => Promise.resolve(chat),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+      applyBatch: (batch) => Promise.resolve({ ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`id:${item.key}`)])), created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
+      updatePropertiesBatch: () => Promise.resolve(),
+    });
+    // The send path swallows a failed local ingest, so the calls are counted:
+    // declaring links there would end the root before the next send.
+    let ensured = 0;
+    const rpc = {
+      execute: () => Promise.reject(new Error("send calls no other module")),
+      ensure: (): Promise<EnsureResult> => { ensured += 1; return Promise.reject(new Error("the send path must not declare links")); },
+    };
+    const module = mountModule(TelegramModule, { graph, rpc }).module;
+
+    const outcome = await module.messagesBatchSend({ messages: [
+      { chat_id: 42, text: "See https://example.test/a" },
+      { chat_id: 42, text: "And https://example.test/b" },
+    ] });
+    expect(outcome).toMatchObject({ total: 2, sent: 2, failed: 0 });
+    expect(graph.spies.applyBatch).toHaveBeenCalledTimes(2);
+    expect(ensured).toBe(0);
+    expect(graph.spies.updatePropertiesBatch).toHaveBeenCalledTimes(2);
   });
 });

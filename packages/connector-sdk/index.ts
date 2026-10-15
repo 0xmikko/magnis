@@ -19,7 +19,7 @@ export * from "./contract/source";
 export * from "./codec";
 export * from "./server";
 
-import type { ConnectorConfig, DatasetActionArgs, Envelope, FetchArgs, SyncTarget } from "./contract/source";
+import type { CommandConnectorConfig, ConnectorConfig, DatasetActionArgs, Envelope, ExecuteTable, FetchArgs, SyncTarget } from "./contract/source";
 
 /** JSON-RPC error codes shared with the host runtime.
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
@@ -184,7 +184,14 @@ interface JsonRpc {
   params?: { name?: string; arguments?: Record<string, unknown> };
 }
 
-function capabilities(config: ConnectorConfig): Record<string, unknown> {
+function answersOnlyCommands(config: ConnectorConfig | CommandConnectorConfig): config is CommandConnectorConfig {
+  return !("fetch" in config);
+}
+
+function capabilities(config: ConnectorConfig | CommandConnectorConfig): Record<string, unknown> {
+  if (answersOnlyCommands(config)) {
+    return { tools: {}, experimental: { magnis: { sync: { surfaces: config.surfaces, mode: "none" } } } };
+  }
   const mode = config.mode ?? "poll";
   return {
     tools: {},
@@ -200,11 +207,55 @@ function capabilities(config: ConnectorConfig): Record<string, unknown> {
   };
 }
 
+/** `magnis.execute`: the payload `{ action, ... }` dispatches by name; an
+ * unknown action answers -32601. */
+async function executeReply(
+  id: unknown,
+  execute: ExecuteTable | undefined,
+  rawArgs: Record<string, unknown>,
+  metaArg: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown>> {
+  const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
+  const handler = execute?.[action];
+  if (!handler) {
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: `unknown execute action '${action}'` },
+    };
+  }
+  try {
+    const result = await handler(rawArgs, metaArg);
+    return { jsonrpc: "2.0", id, result };
+  } catch (e) {
+    return errorReply(id, e);
+  }
+}
+
+/** A connector that only answers commands: `magnis.execute` and nothing to
+ * fetch. */
+async function commandReply(
+  id: unknown,
+  name: string,
+  config: CommandConnectorConfig,
+  rawArgs: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  if (name === "magnis.execute") return executeReply(id, config.execute, rawArgs, extractMeta(rawArgs));
+  if (name === "magnis.sync.fetch") {
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: "magnis.sync.fetch is not implemented: this connector only answers commands" },
+    };
+  }
+  return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown tool ${name}` } };
+}
+
 /** Pure dispatch — maps one inbound JSON-RPC message to a reply (or null for a
  * notification / no-id). Side-effect-free except the caller-provided fetch. */
 export async function handleMessage(
   msg: JsonRpc,
-  config: ConnectorConfig,
+  config: ConnectorConfig | CommandConnectorConfig,
 ): Promise<Record<string, unknown> | null> {
   const id = msg.id;
   const method = msg.method ?? "";
@@ -233,6 +284,7 @@ export async function handleMessage(
         error: { code: -32601, message: `tool '${name}' is not available in ${authMode ? "auth" : "source"} mode` },
       };
     }
+    if (answersOnlyCommands(config)) return commandReply(id, name, config, msg.params?.arguments ?? {});
     if (name === "magnis.auth.probe" && config.probeAuth) {
       const args = (msg.params?.arguments ?? {});
       const meta =
@@ -360,23 +412,7 @@ export async function handleMessage(
       }
     }
 
-    if (name === "magnis.execute") {
-      const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
-      const handler = config.execute?.[action];
-      if (!handler) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32601, message: `unknown execute action '${action}'` },
-        };
-      }
-      try {
-        const result = await handler(rawArgs, metaArg);
-        return { jsonrpc: "2.0", id, result };
-      } catch (e) {
-        return errorReply(id, e);
-      }
-    }
+    if (name === "magnis.execute") return executeReply(id, config.execute, rawArgs, metaArg);
 
     if (name !== "magnis.sync.fetch") {
       return {
@@ -428,6 +464,7 @@ export async function handleMessage(
   // tools/list and anything else: advertise the single read tool (cred-less —
   // initialize/list never need a key; auth fails at fetch).
   if (method === "tools/list") {
+    if (answersOnlyCommands(config)) return { jsonrpc: "2.0", id, result: { tools: [] } };
     const tools: Record<string, unknown>[] = [
       {
         name: "magnis.sync.fetch",
@@ -523,7 +560,7 @@ function isControl(msg: JsonRpc): boolean {
  * @invariant: one slow provider call or the bounded download pool cannot block
  * unrelated Source work or listener shutdown. */
 export async function runConnector(
-  config: ConnectorConfig,
+  config: ConnectorConfig | CommandConnectorConfig,
   input: NodeJS.ReadableStream = process.stdin,
   write: (line: string) => void = (line) => { process.stdout.write(line + "\n"); },
 ): Promise<void> {

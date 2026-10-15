@@ -28,9 +28,15 @@ import type {
   AddLinkParamsSchema,
   AdmitSyncEntitiesResult,
   AllowlistGate,
+  BytesPutParams,
+  BytesReadParams,
+  BytesReadResult,
   CreateEntityParamsSchema,
+  EnsureRequest,
+  EnsureResult,
   EntityWithLinks,
   FileRegisterParamsSchema,
+  FindByCanonicalKeysParams,
   GraphBatchInput,
   GraphBatchResult,
   JsonObject,
@@ -40,6 +46,7 @@ import type {
   LinkedSpecSchema,
   ListEntitiesByPropertyFieldParams,
   ListEntitiesParams,
+  ListLinkPeriodsParams,
   ListSyncMigrationEntitiesParams,
   ListSyncMigrationEntitiesResult,
   MergeInputSchema,
@@ -53,12 +60,12 @@ import type {
   PropertiesUpdateSchema,
   SearchEntitiesParams,
   SetSyncEnabledParamsSchema,
+  StoredBytes,
   SyncAdmissionSubjectSchema,
   SyncStateApplyResult,
   SyncStateResetResult,
   SyncStateStatusResult,
   UpdateEntitySyncEnabledResult,
-  WebRegisterParamsSchema,
   WindowSpec,
 } from "@magnis/sdk";
 
@@ -148,6 +155,12 @@ export interface SearchEntitiesPageParams<T = PersistentEntity> {
 /** The largest page the host serves; a larger `limit` is refused. */
 export const pageLimitMax = 200;
 
+/** The largest page of `listLinkPeriods` the host serves. */
+export const linkPeriodLimitMax = 100;
+
+/** The most UTF-8 bytes one `bytesPut` stores. */
+export const bytesPutMax = 3 * 1024 * 1024;
+
 /// The host graph, injected into each plugin module. Operation names stay
 /// flat snake_case; every input and answer is an SDK shape. The user and the
 /// actor are stamped host-side from the plugin context, never supplied by JS.
@@ -196,18 +209,23 @@ export interface GraphService {
   findByExternalId(externalId: string): Promise<string | null>;
   /** Plural resolution in one host call: input order kept, null where absent. */
   findByExternalIds(externalIds: string[]): Promise<(string | null)[]>;
-  // register a web link (web.link entity + dictionary + bg preview fetch),
-  // optionally linked to a parent entity. Returns the web.link entity id.
-  webRegister(p: z.input<typeof WebRegisterParamsSchema>): Promise<string>;
+  /** The caller's entity ids of one schema by canonical key, in input order,
+   *  null where absent. A declared entity's external id is its own UUID, so
+   *  this is how a declared entity is found by its key. */
+  findByCanonicalKeys(params: FindByCanonicalKeysParams): Promise<(string | null)[]>;
+  /** The periods of one link kind from one entity of the caller, newest
+   *  `validFrom` first, ended ones included; `limit` is 1 to 100. */
+  listLinkPeriods(params: ListLinkPeriodsParams): Promise<PaginatedResponse<Link>>;
+  /** Store text in the host byte store under its SHA-256; storing it again
+   *  answers the same hash. At most 3 MiB of UTF-8; needs the `bytes` grant. */
+  bytesPut(params: BytesPutParams): Promise<StoredBytes>;
+  /** Read a window of the bytes an entity of the caller names in
+   *  `properties.contentHash`, cut on a UTF-8 boundary; needs the `bytes` grant. */
+  bytesRead(params: BytesReadParams): Promise<BytesReadResult>;
   // register a downloadable media file (find-or-create file.object entity +
   // parent link + background download). mimeType is computed plugin-side so
   // the op stays source-agnostic. Returns the file.object entity id.
   fileRegister(p: z.input<typeof FileRegisterParamsSchema>): Promise<string>;
-  /** Batch: every URL a page carries, in ONE host call. Input order is kept;
-   *  each position holds that URL's `web.link` entity id, or `""` where the
-   *  host could not normalize the URL — one bad URL costs its own row and
-   *  never aborts the page. Capability is checked once, before any write. */
-  webRegisterBatch(links: z.input<typeof WebRegisterParamsSchema>[]): Promise<string[]>;
   /** Batch: every attachment a page carries, in ONE host call. Input order is
    *  kept; each position holds that file's `file.object` entity id. There is
    *  no empty sentinel: a row the host did not write is an error. One row
@@ -295,6 +313,10 @@ export interface PluginUtil {
 /// manifest `[permissions]` `call` list, including calls to other plugins.
 export interface RpcExecutor {
   execute<T = unknown>(method: string, params?: unknown): Promise<T>;
+  /** The host's `rpc.ensure`: ask the owning module for refs to entities of
+   *  its schema, without Graph access on its side; the refs it answers are
+   *  declared by the fragment the next `applyBatch` carries. */
+  ensure(request: EnsureRequest): Promise<EnsureResult>;
 }
 
 /// Severity of a plugin log entry. Mirrors the host's `LogLevel` so an entry

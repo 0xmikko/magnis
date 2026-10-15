@@ -234,3 +234,14 @@ export interface ConnectorConfig {
   /** Notification writer override (tests). Default: process.stdout. */
   onNotification?: (line: string) => void;
 }
+
+/** A connector that only answers commands: no `fetch`, no sync mode, no
+ * interval. It advertises `mode: "none"`, and `magnis.sync.fetch` answers
+ * method-not-found. */
+export interface CommandConnectorConfig {
+  name: string;
+  version: string;
+  /** The surfaces a module commands; nothing is delivered on them. */
+  surfaces: string[];
+  execute: ExecuteTable;
+}
