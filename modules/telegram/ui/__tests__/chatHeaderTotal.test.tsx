@@ -221,7 +221,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
       return offsets.length === 2 ? Promise.resolve(page(50, 150, params.offset)) : lastPage;
     });
     const chat: TelegramChat = {
-      isIndexed: true, syncEnabled: true,
+      syncEnabled: true,
       id: "chat-entity-1", chatId: "4242", accountId: "source-account-1",
       name: "Fixture chat", initials: "FC", avatarColor: "#333", lastMessage: "Fixture", time: "12:00",
     };
@@ -323,7 +323,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
     rpcMock.mockResolvedValue({ message_id: 101 });
     const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
     const chat: TelegramChat = {
-      isIndexed: true, syncEnabled: true,
+      syncEnabled: true,
       id: "chat-entity-1",
       chatId: "4242",
       accountId: "source-account-1",
@@ -374,7 +374,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
       return Promise.reject(new Error(`unexpected rpc ${method}`));
     });
     const chat: TelegramChat = {
-      isIndexed: true, syncEnabled: true,
+      syncEnabled: true,
       id: "chat-entity-1",
       chatId: "4242",
       accountId: "source-account-1",

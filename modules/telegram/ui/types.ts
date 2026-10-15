@@ -18,7 +18,6 @@ export interface TelegramChat {
   readonly pinned?: boolean;
   readonly muted?: boolean;
   readonly unreadCount?: number;
-  readonly isIndexed: boolean;
   readonly syncEnabled: boolean;
 }
 

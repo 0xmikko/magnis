@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { PaginatedResponse } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { entity, entityId, mockGraph, mountModule, page } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
 import type { TriggerListItem } from "../../types.ts";
@@ -52,7 +52,7 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
     })) as PaginatedResponse<TriggerListItem>;
 
     expect(listed).toMatchObject({ total: 1_001, limit: 1, offset: 1_000 });
-    expect(listed.items.map((item) => item.id)).toEqual(["trigger-1001"]);
+    expect(listed.items.map((item) => item.id)).toEqual([last.id]);
     expect(graph.spies.listEntitiesWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         schema: TRIGGER,
@@ -65,10 +65,10 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
   });
 
   it("returns an exact filtered page without exposing the UI RPC as an agent tool", async () => {
-    const details = new Map([
-      ["trigger-1", "Daily summary"],
-      ["trigger-2", "Incoming reply monitor"],
-      ["trigger-3", "Incoming reply follow-up"],
+    const details = new Map<string, string>([
+      [entityId("trigger-1"), "Daily summary"],
+      [entityId("trigger-2"), "Incoming reply monitor"],
+      [entityId("trigger-3"), "Incoming reply follow-up"],
     ]);
     const graph = mockGraph({
       listEntitiesWindow: (params) =>

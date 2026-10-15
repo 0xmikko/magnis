@@ -61,7 +61,7 @@ exit "$FLOOD_RUNNER_EXIT"
     expect(defaultLane.calls).toEqual(["bunx", "vitest", "run"]);
     const complete = invoke([]);
     expect(complete.status).toBe(0);
-    expect(complete.calls.filter((arg) => arg === "bun")).toHaveLength(12);
+    expect(complete.calls.filter((arg) => arg === "bun")).toHaveLength(13);
     expect(complete.calls).toContain("__tests__/tst_cat_src_cert_001.test.ts");
     expect(invoke([], 23).status).toBe(23);
   } finally { rmSync(dir, { recursive: true, force: true }); }

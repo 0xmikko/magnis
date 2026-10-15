@@ -23,11 +23,14 @@ import {
   type PluginLogger,
   type RpcExecutor,
 } from "@magnis/plugin-sdk";
+import { communicationMessageExternalId } from "@magnis/sdk/core/communication";
 import type {
   BatchEntityInput,
   BatchLink,
   BatchRef,
-  Entity,
+  EntityRead,
+  EntityExtras,
+  JsonObject,
   JsonValue,
   LinkedEntitySummary,
   PaginatedResponse,
@@ -70,7 +73,6 @@ import {
   INGEST_CHUNK,
   lowerAddr,
   normalizeRecipient,
-  OUTGOING_FROM,
   senderOf,
   str,
   type Data,
@@ -80,6 +82,26 @@ import {
   MESSAGE_SCHEMA,
   addressBatchEntity,
 } from "../schema.ts";
+
+function communicationOf(payload: Data): (Pick<BatchLink, "kind"> & { metadata: JsonObject })[] {
+  if (payload.communication === undefined) return [];
+  if (!Array.isArray(payload.communication)) throw new Error("Invalid email communication observations");
+  return payload.communication.map((value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value) || (value.kind !== "sent" && value.kind !== "received")) throw new Error("Invalid email communication observation");
+    const occurredAt = value.occurredAt;
+    if (occurredAt !== null && typeof occurredAt !== "string") throw new Error("Communication observation requires an explicit occurrence time or null");
+    // Graph owns the canonical timestamp and conversation validators.
+    return { kind: value.kind, metadata: { occurredAt, conversationId: null } };
+  });
+}
+
+function mailboxExternalId(accountId: string): string {
+  return `email.mailbox:${JSON.stringify(accountId)}`;
+}
+
+function threadExternalId(accountId: string, threadId: string): string {
+  return `email.thread:${JSON.stringify(accountId)}:${JSON.stringify(threadId)}`;
+}
 
 interface AddressSyncState {
   id: string;
@@ -92,17 +114,18 @@ function senderAddress(properties: Readonly<Record<string, unknown>>): string {
   return address;
 }
 
-function savedAddress(entity: Entity): Entity & Syncable {
-  if (entity.schemaId !== ADDRESS_SCHEMA || !("syncEnabled" in entity) || typeof entity.syncEnabled !== "boolean"
-    || !("syncRevision" in entity) || typeof entity.syncRevision !== "string" || !/^\d+$/.test(entity.syncRevision)) {
+function savedAddress(read: EntityRead): EntityRead & { extras: EntityExtras & Syncable } {
+  const { entity, extras } = read;
+  if (entity.schemaId !== ADDRESS_SCHEMA || extras.syncEnabled === null) {
     throw new Error(`Email address ${entity.id} has no valid saved synchronization choice`);
   }
-  return { ...entity, syncEnabled: entity.syncEnabled, syncRevision: entity.syncRevision };
+  return { entity, extras: { ...extras, syncEnabled: extras.syncEnabled, syncRevision: extras.syncRevision } };
 }
 
 const SEND_PARAMS = {
       type: "object",
       properties: {
+        account_id: { type: "string", description: "Connected email account; required when several are connected" },
         to: { type: "string", description: "Recipient email address" },
         subject: { type: "string" },
         body_text: { type: "string" },
@@ -111,10 +134,6 @@ const SEND_PARAMS = {
           items: { type: "string", format: "uuid" },
           description: "File entity IDs to attach",
         },
-        account_id: {
-          type: "string",
-          description: "Account to send from; required when more than one email account is connected",
-        },
       },
       required: ["to", "subject", "body_text"],
       additionalProperties: false,
@@ -122,6 +141,7 @@ const SEND_PARAMS = {
 const REPLY_PARAMS = {
       type: "object",
       properties: {
+        account_id: { type: "string", description: "Connected email account; required when several are connected" },
         email_id: { type: "string", format: "uuid", description: "Entity ID of the email to reply to" },
         body_text: { type: "string", description: "Plain text body of the reply" },
         attachment_ids: {
@@ -136,11 +156,13 @@ const REPLY_PARAMS = {
 const BATCH_SEND_PARAMS = {
       type: "object",
       properties: {
+        account_id: { type: "string", description: "Connected email account; required when several are connected" },
         messages: {
           type: "array",
           items: {
             type: "object",
             properties: {
+              account_id: { type: "string" },
               to: { type: "string" },
               subject: { type: "string" },
               body_text: { type: "string" },
@@ -153,10 +175,6 @@ const BATCH_SEND_PARAMS = {
           maxItems: 50,
         },
         excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
-        account_id: {
-          type: "string",
-          description: "Account to send from; required when more than one email account is connected",
-        },
       },
       required: ["messages"],
       additionalProperties: false,
@@ -230,12 +248,13 @@ export class EmailModule {
       const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [MESSAGE_SCHEMA],
+        extras: true,
         limit: limit + offset,
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
       // S5: the dictionary rides the entity rows the search returned.
-      const items = page.map((e) => buildListItem(e, e.properties as Data));
+      const items = page.map((e) => buildListItem(e, e.entity.properties as Data));
       return { items, total, limit, offset };
     }
 
@@ -243,12 +262,13 @@ export class EmailModule {
     // `date` column DESC; each row's dictionary rides on the entity.
     const win = await this.graph.listEntitiesWindow({
       schema: MESSAGE_SCHEMA,
+      extras: true,
 
       order: [{ field: { entityField: "date" }, desc: true }],
       limit,
       offset,
     });
-    const items = win.items.map((entity) => buildListItem(entity, entity.properties as Data));
+    const items = win.items.map((entity) => buildListItem(entity, entity.entity.properties as Data));
     return { items, total: win.total, limit, offset };
   }
 
@@ -285,7 +305,7 @@ export class EmailModule {
   /// when the entity has links, ONE getEntities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
-    const detail = await this.graph.getEntityFull(id, { links: true });
+    const detail = await this.graph.getEntityFull(id, { links: true, extras: true });
     if (detail?.entity.schemaId !== MESSAGE_SCHEMA) return null;
     const { entity, links } = detail;
     // S5: the message DICT is the record.
@@ -296,22 +316,22 @@ export class EmailModule {
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linkedEntities: LinkedEntitySummary[] = [];
     let senderSync: MessageDetailView["senderSync"] = null;
-    const authors = links.filter((link) => link.from === entity.id && link.kind === "authored_by" && link.validUntil === null);
+    const authors = links.filter((link) => link.from === entity.id && link.kind === "received_from" && link.validUntil === null);
     if (authors.length > 1) throw new Error(`Email ${id} has conflicting sender links`);
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === entity.id ? l.to : l.from;
-      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))]);
-      const byId = new Map(targets.map((t) => [t.id, t]));
+      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))], { extras: true });
+      const byId = new Map<string, EntityRead>(targets.map((t) => [t.entity.id, t]));
       const author = authors[0];
       if (author !== undefined) {
         const target = byId.get(author.to);
         if (target === undefined) throw new Error(`Email ${id} sender is missing`);
         const saved = savedAddress(target);
-        senderSync = { id: saved.id, syncEnabled: saved.syncEnabled, syncRevision: saved.syncRevision };
+        senderSync = { id: saved.entity.id, syncEnabled: saved.extras.syncEnabled, syncRevision: saved.extras.syncRevision };
       }
       for (const l of links) {
-        const t = byId.get(neighbourId(l));
+        const t = byId.get(neighbourId(l))?.entity;
         if (!t) continue;
         linkedEntities.push({
           ...linkedEntitySummary(t, l, l.kind),
@@ -326,6 +346,7 @@ export class EmailModule {
 
     const created = entity.createdAt;
     return {
+      extras: detail.extras,
       id: entity.id,
       schemaId: entity.schemaId,
       sender: senderOf(d),
@@ -350,15 +371,15 @@ export class EmailModule {
     if (ids.length !== unique.length) throw new Error("Email address lookup length mismatch");
     const found = ids.filter((id): id is string => id !== null);
     if (found.length === 0) return known;
-    const rows = new Map((await this.graph.getEntities(found)).map((row) => [row.id, row]));
+    const rows = new Map<string, EntityRead>((await this.graph.getEntities(found, { extras: true })).map((row) => [row.entity.id, row]));
     unique.forEach((address, index) => {
       const id = ids[index];
       if (id === null) return;
       const row = id === undefined ? undefined : rows.get(id);
       if (row === undefined) throw new Error("Email address lookup returned an incomplete result");
       const saved = savedAddress(row);
-      if (senderAddress(saved.properties as Data) !== address) throw new Error("Email address external id does not match its identity");
-      known.set(address, { id: saved.id, syncEnabled: saved.syncEnabled });
+      if (senderAddress(saved.entity.properties as Data) !== address) throw new Error("Email address external id does not match its identity");
+      known.set(address, { id: saved.entity.id, syncEnabled: saved.extras.syncEnabled });
     });
     return known;
   }
@@ -377,18 +398,18 @@ export class EmailModule {
         owned.push({ env, address: senderAddress({ address: from }) });
         continue;
       }
-      const id = await this.graph.findByExternalId(env.remoteId);
+      const id = await this.graph.findByExternalId(communicationMessageExternalId("email.message", env.accountId, env.remoteId));
       if (id === null && env.kind === "delete") continue;
       if (id === null) throw new Error("Email event has no sender or stored message ownership");
       if (env.kind === "delete") deleteTargets.set(env.remoteId, id);
       const stored = await this.graph.getEntityFull(id, { links: true });
       if (stored?.entity.schemaId !== MESSAGE_SCHEMA) throw new Error("Email event does not refer to a stored message");
-      const authors = stored.links.filter((link) => link.from === id && link.kind === "authored_by" && link.validUntil === null);
+      const authors = stored.links.filter((link) => link.from === id && link.kind === "received_from" && link.validUntil === null);
       const author = authors[0];
       if (authors.length !== 1 || author === undefined) throw new Error("Email event has no unique stored sender");
-      const row = await this.graph.getEntity(author.to);
+      const row = await this.graph.getEntity(author.to, { extras: true });
       if (row === null) throw new Error("Email event refers to a missing sender");
-      const address = senderAddress(savedAddress(row).properties as Data);
+      const address = senderAddress(savedAddress(row).entity.properties as Data);
       owned.push({ env: env.kind === "delete" ? env : { ...env, payload: { ...(stored.entity.properties as Data), ...payload, from_address: address } }, address });
     }
     const addresses = await this.readAddresses(owned.flatMap(({ env, address }) => [address, ...addressesOf(env.payload as Data)]));
@@ -467,6 +488,11 @@ export class EmailModule {
         if (typeof total !== "number" || typeof skipped !== "number") {
           throw new Error("email ingest refused: a mailbox envelope must carry messages_total and skipped");
         }
+        const key = mailboxExternalId(env.accountId);
+        await this.graph.applyBatch({
+          entities: [{ key, schemaId: "email.mailbox", name: null, idx: null, date: null, externalId: key, properties: { address: null } }],
+          refs: [], links: [],
+        });
         plan.total += total;
         plan.skipped += skipped;
         continue;
@@ -516,9 +542,8 @@ export class EmailModule {
   /// Delete envelope: resolve the email by its source external id and remove it.
   private async ingestDelete(env: SyncEnvelope, storedId?: string): Promise<boolean> {
     if (!env.remoteId) return false;
-    // S5: the remote id IS the node's external id — resolution goes through the
-    // one chokepoint.
-    const id = storedId ?? await this.graph.findByExternalId(env.remoteId);
+    // Resolve the provider ID within its connected account.
+    const id = storedId ?? await this.graph.findByExternalId(communicationMessageExternalId("email.message", env.accountId, env.remoteId));
     if (!id) return false;
     await this.graph.deleteEntity(id);
     return true;
@@ -532,8 +557,21 @@ export class EmailModule {
     countLive: boolean,
     addresses: Map<string, AddressSyncState>,
   ): Promise<number> {
+    const observations = new Map(messages.map((env) => [env, communicationOf(env.payload as Data)]));
+    const context = new Map<string, BatchEntityInput>();
+    for (const env of messages) {
+      if (observations.get(env)?.length === 0) continue;
+      const mailbox = mailboxExternalId(env.accountId);
+      context.set(mailbox, { key: mailbox, schemaId: "email.mailbox", name: null, idx: null, date: null, externalId: mailbox, properties: { address: null } });
+      const threadId = str(env.payload as Data, "thread_id");
+      if (threadId !== null) {
+        const thread = threadExternalId(env.accountId, threadId);
+        context.set(thread, { key: thread, schemaId: "email.thread", name: null, idx: threadId, date: null, externalId: thread, properties: { threadId } });
+      }
+    }
+    const contextIds = context.size === 0 ? {} : (await this.graph.applyBatch({ entities: [...context.values()], refs: [], links: [] })).ids;
     const entities: BatchEntityInput[] = [];
-    const refs: BatchRef[] = [];
+    const refs: BatchRef[] = [...context.values()].filter((item) => item.schemaId === "email.mailbox").map((item) => ({ key: item.key, externalId: item.externalId }));
     const links: BatchLink[] = [];
     const addrSeen = new Set<string>();
     const newAddresses = new Map<string, boolean>();
@@ -582,6 +620,7 @@ export class EmailModule {
       if (typeof dict.message_id_header === "string") dict.message_id = dict.message_id_header;
       delete dict.message_id_header;
       if (dict.thread_id === null) delete dict.thread_id;
+      delete dict.communication;
       delete dict.attachments;
       delete dict.to_addresses;
       delete dict.cc_addresses;
@@ -592,13 +631,18 @@ export class EmailModule {
         name: str(p, "subject") ?? "",
         idx: str(p, "thread_id"),
         date: str(p, "sent_at"),
-        externalId: remoteId,
+        externalId: communicationMessageExternalId("email.message", env.accountId, remoteId),
         properties: dict,
       });
+      for (const observation of observations.get(env) ?? []) {
+        const threadId = str(p, "thread_id");
+        const conversationId = threadId === null ? null : contextIds[threadExternalId(env.accountId, threadId)];
+        if (conversationId === undefined) throw new Error("Email conversation was not persisted");
+        addLink(mailboxExternalId(env.accountId), remoteId, observation.kind, remoteId, { ...observation.metadata, conversationId });
+      }
       const from = lowerAddr(str(p, "from_address"));
-      // S5: authorship is `authored_by` — the relation, not a channel-shaped
-      // kind. `sent_from` retires with this writer.
-      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by", remoteId, null);
+      // Header addresses describe sender/recipient identity, not observed delivery.
+      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "received_from", remoteId, null);
       for (const r of recipientsWithRoles(p)) {
         addLink(remoteId, addAddress(r.addr, null), "sent_to", remoteId, { role: r.role });
       }
@@ -610,7 +654,11 @@ export class EmailModule {
     const liveIds = countLive
       ? [...new Set(messages.filter((env) => env.kind === "live").map((env) => env.remoteId).filter((id): id is string => Boolean(id)))]
       : [];
-    const existing = liveIds.length > 0 ? await this.graph.findByExternalIds(liveIds) : [];
+    const existing = liveIds.length > 0 ? await this.graph.findByExternalIds(liveIds.map((id) => {
+        const env = messages.find((env) => env.remoteId === id);
+        if (env === undefined) throw new Error("Missing email envelope");
+        return communicationMessageExternalId("email.message", env.accountId, id);
+      })) : [];
     if (existing.length !== liveIds.length) throw new Error("email ingest: external id lookup length mismatch");
 
     // One atomic op (rolls back on failure; idempotent on external_id).
@@ -637,7 +685,7 @@ export class EmailModule {
         const filename = str(att, "filename") ?? "attachment";
         await this.graph.fileRegister({
           externalId: `file:gmail:${env.accountId}:${remoteId}:${attId}`,
-          parentExternalId: remoteId,
+          parentExternalId: communicationMessageExternalId("email.message", env.accountId, remoteId),
           linkKind: "file.attachment",
           name: filename,
           mimeType: str(att, "mime_type") ?? "application/octet-stream",
@@ -698,11 +746,7 @@ export class EmailModule {
   }
 
   // ── send / reply / batch_send (@writeTool) ────────────────────
-  // Native-parity flow (NOT telegram's route-then-ingest): create the outgoing
-  // email.message FIRST (via applyBatch — recipient email.address + sent_to link
-  // folded in), then route the send command best-effort (source failure leaves the
-  // created entity — non-fatal). Reply additionally threads in_reply_to from the
-  // original and links attachments to the ORIGINAL email.
+  // All send paths require a provider receipt before recording a message and sent fact.
 
   @rpc("send", {
     description:
@@ -710,8 +754,7 @@ export class EmailModule {
     params: SEND_PARAMS,
   })
   async emailSend(params: SendParams): Promise<Record<string, unknown>> {
-    const account = await this.sendingAccount(params.account_id);
-    return this.sendSingle(account, params.to, params.subject, params.body_text, params.attachment_ids ?? []);
+    return this.sendSingle(params.to, params.subject, params.body_text, params.attachment_ids ?? [], params.account_id);
   }
 
   @rpc("reply", {
@@ -736,57 +779,9 @@ export class EmailModule {
       (detail.entity.name && detail.entity.name.length > 0 ? detail.entity.name : "(no subject)");
     const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
     const inReplyTo = str(od, "message_id");
-    // A reply leaves from the account the original arrived at: the host
-    // routes a Source command only to an account it is named.
-    if (detail.entity.origin !== "canonical") {
-      throw new Error(`Email ${params.email_id} has no Source account to reply from`);
-    }
-    const account = detail.entity.source.account;
 
-    // Attachment ownership + file-ness (user-scoped) — fail if the caller
-    // doesn't own a file, or the id isn't a real file (empty dictionary).
-    await this.resolveOwnedFileNames(attachmentIds);
-
-    // Route the reply (native parity: FATAL on source failure).
-    const result = await this.graph.sourceCommand({
-      action: "send_message",
-      draft: {
-        to: [{ address: sender }],
-        cc: [],
-        bcc: [],
-        subject: replySubject,
-        body_text: params.body_text,
-        body_html: null,
-        in_reply_to: inReplyTo,
-      },
-    }, account);
-
-    // @tested-by: tst_module_email_reply_004
-    // @invariant: INV-5 — the same receipt rule as `send`. `reply` reported
-    // `status: "sent"` for whatever the connector returned, including a success
-    // with nothing in it, and it did so while writing attachment links to the
-    // ORIGINAL email — so a reply that never left still mutated the graph.
-    // Checked BEFORE those links, so a refusal leaves no trace.
-    if (!str(result, "message_id")) {
-      throw new Error(
-        "email.reply: the source accepted the reply but returned no provider id — " +
-          "treating this as NOT sent. Check the connector's own logs; a silent " +
-          "success here means the mail never reached the provider.",
-      );
-    }
-
-    // Link attachments to the ORIGINAL email (native parity).
-    for (const fid of attachmentIds) {
-      await this.graph.addLink({ from: params.email_id, to: fid, kind: "file.attachment" });
-    }
-
-    return {
-      status: "sent",
-      reply_to: sender,
-      subject: replySubject,
-      attachment_count: attachmentIds.length,
-      result,
-    };
+    const result = await this.sendSingle(sender, replySubject, params.body_text, attachmentIds, params.account_id, inReplyTo);
+    return { ...result, status: "sent", reply_to: sender, subject: replySubject };
   }
 
   @rpc("batch_send", {
@@ -814,7 +809,6 @@ export class EmailModule {
         throw new Error(`message[${String(i)}]: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
     });
-    const account = await this.sendingAccount(params.account_id);
     const excluded = new Set(params.excluded_indices ?? []);
 
     const results: Record<string, unknown>[] = [];
@@ -833,7 +827,7 @@ export class EmailModule {
       // dropping their results loses the only record the caller gets. Report
       // every message and keep going.
       try {
-        const r = await this.sendSingle(account, m.to, m.subject, m.body_text, m.attachment_ids ?? []);
+        const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? [], m.account_id ?? params.account_id);
         sent++;
         results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
       } catch (sendError) {
@@ -1178,27 +1172,26 @@ export class EmailModule {
     return names;
   }
 
-  // @tested-by: tst_module_email_send_009
-  // A new email has no original to inherit an account from (a reply uses its
-  // original's): the caller names one, or the only connected one is meant.
-  private async sendingAccount(accountId: string | undefined): Promise<string> {
-    if (accountId !== undefined) return accountId;
+  private async sendAccount(requested: string | undefined): Promise<string> {
     const { accounts } = await this.graph.syncState("status");
-    const [only, ...others] = accounts;
-    if (only === undefined || others.length > 0) {
-      throw new Error(`${String(accounts.length)} email accounts are connected; name one with account_id`);
+    if (requested !== undefined) {
+      if (!accounts.some((account) => account.accountId === requested)) throw new Error("Email account is not connected");
+      return requested;
     }
-    return only.accountId;
+    const account = accounts[0];
+    if (accounts.length !== 1 || account === undefined) throw new Error("Specify account_id: email needs one connected account");
+    return account.accountId;
   }
 
-  /// Create one outgoing email (entity + recipient address + sent_to in one
-  /// applyBatch), link attachments, then best-effort source route (non-fatal).
+  /// Send through the selected Source, then persist its observation atomically.
+  /// Local failures after delivery must not invite a duplicate provider send.
   private async sendSingle(
-    account: string,
     to: string,
     subject: string,
     bodyText: string,
     attachmentIds: string[],
+    requestedAccount: string | undefined,
+    inReplyTo: string | null = null,
   ): Promise<Record<string, unknown>> {
     // @tested-by: tst_module_email_send_002
     // @invariant: INV-7 — reject a malformed recipient BEFORE any read, write
@@ -1206,10 +1199,11 @@ export class EmailModule {
     // the JSON text of an array, and let Gmail refuse it downstream.
     const toLower = normalizeRecipient(to);
 
-    // Attachment ownership: each id must be the caller's file; the names ride
-    // the file.attachment edges, not the message record.
+    // Attachment ownership + names (native put attachment_names on the record;
+    // it required a file dictionary — rejected otherwise, no fallback name).
     await this.resolveOwnedFileNames(attachmentIds);
     const addressSyncEnabled = await this.syncCreationRule();
+    const accountId = await this.sendAccount(requestedAccount);
     const now = new Date().toISOString();
     // @tested-by: tst_module_email_send_004, tst_module_email_send_006
     // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
@@ -1225,9 +1219,9 @@ export class EmailModule {
         subject,
         body_text: bodyText,
         body_html: null,
-        in_reply_to: null,
+        in_reply_to: inReplyTo,
       },
-    }, account);
+    }, accountId);
     const providerMessageId = str(routed, "message_id");
     const providerThreadId = str(routed, "thread_id");
     // @tested-by: tst_module_email_send_008
@@ -1246,11 +1240,12 @@ export class EmailModule {
     }
 
     const messageDict: Data = {
-      from_address: OUTGOING_FROM,
+      from_address: null,
       subject,
       body_text: bodyText,
-      sent_at: now,
+      sent_at: null,
       has_attachments: attachmentIds.length > 0,
+      ...(providerThreadId === null ? {} : { thread_id: providerThreadId }),
     };
     // @tested-by: tst_module_email_send_006
     // @invariant: INV-27 — the provider has ACCEPTED by this point, so the mail
@@ -1263,7 +1258,14 @@ export class EmailModule {
     let entityId: string | null = null;
     let graphWriteFailed = false;
     try {
-      // Outgoing message has no stable external_id → always created fresh; the
+      const mailboxKey = mailboxExternalId(accountId);
+      const mailboxId = await this.graph.findByExternalId(mailboxKey);
+      if (mailboxId === null) throw new Error("Connected mailbox has not been synchronized yet");
+      const mailbox = await this.graph.getEntity(mailboxId);
+      if (mailbox?.schemaId !== "email.mailbox" || mailbox.origin !== "canonical" || mailbox.source.account !== accountId) throw new Error("Email mailbox does not match the sending account");
+      messageDict.from_address = str(mailbox.properties as Data, "address");
+      const conversationId = providerThreadId === null ? null : await this.graph.findByExternalId(threadExternalId(accountId, providerThreadId));
+      // Provider identity reconciles the outgoing record with later Source sync; the
       // recipient address resolves-or-creates by its external_id (the hub).
       const msgKey = "out";
       const addrKey = `addr:${toLower}`;
@@ -1285,13 +1287,17 @@ export class EmailModule {
             // S5: the sent copy is a node with a DICT under the provider's own
             // id as its external id — that id is what makes the copy arriving
             // from Sent update THIS node instead of creating a second one.
-            externalId: providerMessageId,
+            externalId: communicationMessageExternalId("email.message", accountId, providerMessageId),
             properties: messageDict,
           },
           addressBatchEntity(addrKey, toLower, null, addressSyncEnabled),
         ],
-        refs: [],
+        refs: [{ key: "mailbox", externalId: mailboxKey }],
         links: [{
+          fromKey: "mailbox", toKey: msgKey, kind: "sent",
+          confidence: null, metadata: { occurredAt: null, conversationId },
+          declaredBy: null, validFrom: null, validUntil: null,
+        }, {
           fromKey: msgKey,
           toKey: addrKey,
           kind: "sent_to",
@@ -1328,8 +1334,8 @@ export class EmailModule {
       to,
       body_text: bodyText,
       attachment_count: attachmentIds.length,
-      from_address: OUTGOING_FROM,
-      sender: OUTGOING_FROM,
+      from_address: messageDict.from_address,
+      sender: messageDict.from_address,
       sent_at: now,
       timestamp: now,
     };

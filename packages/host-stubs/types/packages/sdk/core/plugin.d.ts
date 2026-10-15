@@ -106,7 +106,8 @@ export type FailedToolAnswer = z.output<typeof FailedToolAnswerSchema>;
 export declare const CreateEntityParamsSchema: z.ZodObject<{
     schemaId: z.ZodString;
     name: z.ZodString;
-    clientId: z.ZodExactOptional<z.ZodString>;
+    properties: z.ZodExactOptional<z.ZodType<import("./json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonObject, unknown>>>;
+    clientId: z.ZodExactOptional<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     idx: z.ZodExactOptional<z.ZodString>;
     date: z.ZodExactOptional<z.ZodString>;
     properties: z.ZodExactOptional<z.ZodType<import("./json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonObject, unknown>>>;
@@ -115,7 +116,7 @@ export declare const CreateEntityParamsSchema: z.ZodObject<{
 export type CreateEntityParams = z.output<typeof CreateEntityParamsSchema>;
 /** `graph.updateEntitySyncEnabled`: the user's sync choice for one entity. */
 export declare const SetSyncEnabledParamsSchema: z.ZodObject<{
-    id: z.ZodString;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     syncEnabled: z.ZodBoolean;
 }, z.core.$strict>;
 export type SetSyncEnabledParams = z.output<typeof SetSyncEnabledParamsSchema>;
@@ -126,7 +127,7 @@ export declare const UpdateEntitySyncEnabledResultSchema: z.ZodObject<{
 export type UpdateEntitySyncEnabledResult = z.output<typeof UpdateEntitySyncEnabledResultSchema>;
 /** `graph.admitSyncEntities`: an entity and the page's events it owns. */
 export declare const SyncAdmissionSubjectSchema: z.ZodObject<{
-    entityId: z.ZodUUID;
+    entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     remoteIds: z.ZodReadonly<z.ZodArray<z.ZodString>>;
 }, z.core.$strict>;
 export type SyncAdmissionSubject = z.output<typeof SyncAdmissionSubjectSchema>;
@@ -144,7 +145,7 @@ export type ListSyncMigrationEntitiesParams = z.output<typeof ListSyncMigrationE
 /** An entity of a syncable schema as the sync migration reads it: its saved
  * choice and revision are null until the owning module initializes them. */
 export declare const SyncMigrationEntitySchema: z.ZodObject<{
-    id: z.ZodString;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     schemaId: z.ZodString;
     name: z.ZodNullable<z.ZodString>;
     indexed: z.ZodBoolean;
@@ -158,7 +159,7 @@ export type SyncMigrationEntity = z.output<typeof SyncMigrationEntitySchema>;
  * next page starts after, or null at the end. */
 export declare const ListSyncMigrationEntitiesResultSchema: z.ZodObject<{
     items: z.ZodReadonly<z.ZodArray<z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         schemaId: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
@@ -240,6 +241,7 @@ export declare const SyncStateResetResultSchema: z.ZodObject<{
 export type SyncStateResetResult = z.output<typeof SyncStateResetResultSchema>;
 /** `graph.listEntities`. */
 export declare const ListEntitiesParamsSchema: z.ZodObject<{
+    extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     schemaId: z.ZodString;
     limit: z.ZodExactOptional<z.ZodInt>;
     offset: z.ZodExactOptional<z.ZodInt>;
@@ -252,6 +254,7 @@ export declare const ListEntitiesParamsSchema: z.ZodObject<{
 export type ListEntitiesParams = z.output<typeof ListEntitiesParamsSchema>;
 /** `graph.searchEntitiesByName`. */
 export declare const SearchEntitiesParamsSchema: z.ZodObject<{
+    extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     query: z.ZodString;
     schemaIds: z.ZodExactOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     limit: z.ZodExactOptional<z.ZodInt>;
@@ -302,6 +305,7 @@ export declare const OrderKeyDtoSchema: z.ZodObject<{
 export type OrderKeyDto = z.output<typeof OrderKeyDtoSchema>;
 /** `graph.listEntitiesWindow`. */
 export declare const WindowSpecSchema: z.ZodObject<{
+    extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     schema: z.ZodString;
     filterField: z.ZodExactOptional<z.ZodObject<{
         entityField: z.ZodExactOptional<z.ZodEnum<{
@@ -355,7 +359,8 @@ export declare const WindowSpecSchema: z.ZodObject<{
 export type WindowSpec = z.output<typeof WindowSpecSchema>;
 /** `graph.listLinked`. */
 export declare const LinkedSpecSchema: z.ZodObject<{
-    parentId: z.ZodString;
+    extras: z.ZodExactOptional<z.ZodLiteral<true>>;
+    parentId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     linkKind: z.ZodString;
     direction: z.ZodEnum<{
         in: "in";
@@ -389,15 +394,16 @@ export declare const LinkedSpecSchema: z.ZodObject<{
 export type LinkedSpec = z.output<typeof LinkedSpecSchema>;
 /** `graph.addLink`: a canonical link, with an optional validity interval. */
 export declare const AddLinkParamsSchema: z.ZodObject<{
-    from: z.ZodString;
-    to: z.ZodString;
+    from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     kind: z.ZodString;
     metadata: z.ZodExactOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
     validFrom: z.ZodExactOptional<z.ZodISODateTime>;
     validUntil: z.ZodExactOptional<z.ZodISODateTime>;
 }, z.core.$strict>;
 export type AddLinkParams = z.output<typeof AddLinkParamsSchema>;
-/** `fileRegister`: a downloadable media file; its bytes never cross the plugin boundary. */
+/** `fileRegister`: a downloadable media file; its bytes never cross the
+ * plugin boundary, and a module never names a path for them. */
 export declare const FileRegisterParamsSchema: z.ZodObject<{
     externalId: z.ZodString;
     parentExternalId: z.ZodString;
@@ -405,7 +411,6 @@ export declare const FileRegisterParamsSchema: z.ZodObject<{
     name: z.ZodExactOptional<z.ZodString>;
     mimeType: z.ZodString;
     sizeBytes: z.ZodExactOptional<z.ZodInt>;
-    localPath: z.ZodExactOptional<z.ZodString>;
     cloudUrl: z.ZodExactOptional<z.ZodString>;
     sourceRef: z.ZodExactOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
     sourceModule: z.ZodString;
@@ -413,15 +418,59 @@ export declare const FileRegisterParamsSchema: z.ZodObject<{
     download: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type FileRegisterParams = z.output<typeof FileRegisterParamsSchema>;
-/** `webRegister`: a URL the host normalizes; one it cannot is skipped. */
-export declare const WebRegisterParamsSchema: z.ZodObject<{
-    url: z.ZodString;
-    parentEntityId: z.ZodExactOptional<z.ZodString>;
-    linkKind: z.ZodExactOptional<z.ZodString>;
+/** SHA-256 of stored bytes: 64 lowercase hex characters, no prefix. */
+export declare const ContentHashSchema: z.ZodString;
+export type ContentHash = z.output<typeof ContentHashSchema>;
+/** What the host byte store answers after a write. */
+export declare const StoredBytesSchema: z.ZodObject<{
+    contentHash: z.ZodString;
+    sizeBytes: z.ZodInt;
 }, z.core.$strict>;
-export type WebRegisterParams = z.output<typeof WebRegisterParamsSchema>;
+export type StoredBytes = z.output<typeof StoredBytesSchema>;
+/** `graph.bytesPut`: UTF-8 text of at most 3 MiB, stored once under its hash. */
+export declare const BytesPutParamsSchema: z.ZodObject<{
+    text: z.ZodString;
+}, z.core.$strict>;
+export type BytesPutParams = z.output<typeof BytesPutParamsSchema>;
+/** `graph.bytesRead`: a window of the bytes that an entity of the calling
+ * user names in `properties.contentHash`. */
+export declare const BytesReadParamsSchema: z.ZodObject<{
+    entityId: z.ZodString;
+    offset: z.ZodInt;
+    length: z.ZodInt;
+}, z.core.$strict>;
+export type BytesReadParams = z.output<typeof BytesReadParamsSchema>;
+/** At most 1 MiB, cut on a UTF-8 boundary; `length` is the real byte count
+ * and `sizeBytes` the full size of the stored content. */
+export declare const BytesReadResultSchema: z.ZodObject<{
+    text: z.ZodString;
+    offset: z.ZodInt;
+    length: z.ZodInt;
+    sizeBytes: z.ZodInt;
+}, z.core.$strict>;
+export type BytesReadResult = z.output<typeof BytesReadResultSchema>;
+/** `graph.findByCanonicalKeys`: the caller's entity ids of one schema, in
+ * input order, null where absent. A declared entity's external id is its own
+ * UUID, so this is how a module finds it by its key. */
+export declare const FindByCanonicalKeysParamsSchema: z.ZodObject<{
+    schemaId: z.ZodString;
+    canonicalKeys: z.ZodArray<z.ZodString>;
+}, z.core.$strict>;
+export type FindByCanonicalKeysParams = z.output<typeof FindByCanonicalKeysParamsSchema>;
+/** `graph.listLinkPeriods`: the periods of one link kind from one entity of
+ * the calling user, newest `validFrom` first; `notAfter` keeps periods that
+ * start at or before that moment. */
+export declare const ListLinkPeriodsParamsSchema: z.ZodObject<{
+    fromEntityId: z.ZodString;
+    kind: z.ZodString;
+    notAfter: z.ZodNullable<z.ZodISODateTime>;
+    offset: z.ZodInt;
+    limit: z.ZodInt;
+}, z.core.$strict>;
+export type ListLinkPeriodsParams = z.output<typeof ListLinkPeriodsParamsSchema>;
 /** `graph.listEntitiesByPropertyField`. */
 export declare const ListEntitiesByPropertyFieldParamsSchema: z.ZodObject<{
+    extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     entitySchema: z.ZodString;
     key: z.ZodString;
     value: z.ZodString;

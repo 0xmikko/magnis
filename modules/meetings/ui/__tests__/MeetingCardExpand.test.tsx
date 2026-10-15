@@ -84,12 +84,12 @@ describe("tst_fe_meetings_expand_005 — the GENERIC card renders from dictionar
             location: "Office",
             neighbours: [
               {
-                kind: "attendee",
+                kind: "meetings.attendee",
                 name: "anna@x.test",
                 schema_id: "email.address",
                 metadata: { display_name: "Anna" },
               },
-              { kind: "attendee", name: "boris@x.test", schema_id: "email.address" },
+              { kind: "meetings.attendee", name: "boris@x.test", schema_id: "email.address" },
               { kind: "created_by", name: "Project X", schema_id: "projects.project" },
             ],
           }}

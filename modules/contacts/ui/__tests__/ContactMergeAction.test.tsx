@@ -1,3 +1,4 @@
+import { entityId } from "@magnis/testkit/module";
 /**
  * @test-id: tst_fe_contacts_browser_002
  * @scenario: scn_contacts_browser_merge_001
@@ -22,8 +23,8 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
       if (method === "contacts.list") {
         return Promise.resolve({
           items: [
-            { id: "survivor", name: "Ada" },
-            { id: "retired", name: "Ada Duplicate" },
+            { id: entityId("survivor"), name: "Ada" },
+            { id: entityId("retired"), name: "Ada Duplicate" },
           ],
           total: 2,
           limit: 100,
@@ -32,8 +33,8 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
       }
       if (method === "contacts.merge_preview") {
         const preview: MergePreview = {
-          survivor: { id: "survivor", name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
-          retired: { id: "retired", name: "Ada Duplicate", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
+          survivor: { id: entityId("survivor"), name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
+          retired: { id: entityId("retired"), name: "Ada Duplicate", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
           sources: [],
           fields: {
             email: {
@@ -52,8 +53,8 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
       }
       if (method === "contacts.merge") {
         const merged: MergeResult = {
-          survivorId: "survivor",
-          retiredId: "retired",
+          survivorId: entityId("survivor"),
+          retiredId: entityId("retired"),
           linksRepointed: 2,
           linksDeduplicated: 0,
           linksReflexiveRemoved: 0,
@@ -68,14 +69,14 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
       queryClient: { invalidateQueries },
     } as unknown as AppRuntime;
 
-    const view = render(<ContactMergeAction entityId="survivor" runtime={runtime} />);
+    const view = render(<ContactMergeAction entityId={entityId("survivor")} runtime={runtime} />);
     fireEvent.click(view.getByRole("button", { name: "Merge contact" }));
 
     expect(await view.findByText("Ada Duplicate")).toBeTruthy();
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith("contacts.merge_preview", {
-        survivorId: "survivor",
-        retiredId: "retired",
+        survivorId: entityId("survivor"),
+        retiredId: entityId("retired"),
       }),
     );
 
@@ -83,8 +84,8 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
 
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith("contacts.merge", {
-        survivorId: "survivor",
-        retiredId: "retired",
+        survivorId: entityId("survivor"),
+        retiredId: entityId("retired"),
         preview: false,
         overrides: [],
         reason: null,

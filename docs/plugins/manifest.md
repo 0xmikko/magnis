@@ -49,7 +49,9 @@ publisher = "ai.magnis"          # reverse-domain publisher identity
 ```
 
 `tier = "system"` (optional) marks a mandatory, always-loaded module that
-cannot be uninstalled or disabled (`file`, `notes` and `triggers`).
+cannot be uninstalled or disabled (`file`, `notes` and `triggers`). A Source
+manifest takes the same key, and the index carries it in the Source's entry;
+without it a package is `community`.
 
 `dependsOn` (optional) names the modules this module needs directly:
 
@@ -261,9 +263,16 @@ secrets model is in the secrets section of [source.md](./source.md).
 
 ```toml
 [sync]
-mode = "poll"          # poll | push
+mode = "poll"          # poll | push | none
 interval_secs = 300    # poll cadence (poll mode)
 ```
+
+`mode = "none"` is a Source that only answers commands: a module calls it with
+`sourceCommand`, and it delivers no pages, so it takes no `interval_secs`. Its
+connector is a `CommandConnectorConfig`; its certification says
+`delivery = "none"`, may leave out `[auth]`, and its compatibility surfaces leave
+out `cursor_terminal_null` and `[progress]`. Each user gets one account without
+credentials on the first command.
 
 A source without a `[sync]` block gets no source runtime — it is never synced
 (`local` uses this; `x-mcp` is tools-only and pairs it with `[tools]`).

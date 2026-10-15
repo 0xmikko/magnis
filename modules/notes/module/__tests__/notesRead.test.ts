@@ -22,7 +22,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  entity,
+  entityId, entityRead, entityExtras, entity,
   link,
   mockGraph,
   mountModule,
@@ -68,7 +68,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
 
   it("F1 search reads the dictionary riding the entity (S1: no batch facets, no canonical)", async () => {
     spy(graph, "searchEntitiesByName").mockResolvedValue([
-      entity("n1", "", {
+      entityRead(entity(entityId("n1"), "", {
         schemaId: NOTE,
         createdAt: "2026-01-01T00:00:00Z",
         properties: {
@@ -77,7 +77,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
           pinned: true,
           updated_at: "2026-03-03T00:00:00Z",
         },
-      }),
+      }), entityExtras()),
     ]);
 
     const page = await mod.list({ search: "dict", limit: 50, offset: 0 });
@@ -92,15 +92,16 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
 
   it("F2 get resolves link neighbours via ONE getEntities batch (no per-link fetch)", async () => {
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("n1", "My Note", { schemaId: NOTE, properties: { body: "b" } }),
-      links: [link("n1", "c1", "mentions"), link("n1", "c2", "mentions")],
+      extras: entityExtras(),
+      entity: entity(entityId("n1"), "My Note", { schemaId: NOTE, properties: { body: "b" } }),
+      links: [link(entityId("n1"), entityId("c1"), "mentions"), link(entityId("n1"), entityId("c2"), "mentions")],
     });
     spy(graph, "getEntities").mockResolvedValue([
-      entity("c1", "Alice", { schemaId: "contacts.person" }),
-      entity("c2", "Bob", { schemaId: "contacts.person" }),
+      entity(entityId("c1"), "Alice", { schemaId: "contacts.person" }),
+      entity(entityId("c2"), "Bob", { schemaId: "contacts.person" }),
     ]);
 
-    const view = await mod.get({ id: "n1" });
+    const view = await mod.get({ id: entityId("n1") });
     expect(view.title).toBe("My Note");
     expect(view.linkedEntities.map((l) => l.name)).toEqual(["Alice", "Bob"]);
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
@@ -111,9 +112,22 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
     await expect(mod.get({ id: "nope" })).rejects.toThrow();
   });
 
+  it("tst_cat_entity_extras_detail_001 keeps saved pin order zero and archive state when opening a note directly", async () => {
+    const read = entityRead(
+      entity("n1", "Pinned note", { schemaId: NOTE }),
+      entityExtras({ pinOrder: 0, archived: true }),
+    );
+    spy(graph, "getEntityFull").mockResolvedValue({ ...read, links: [] });
+
+    const view = await mod.get({ id: read.entity.id });
+
+    expect(view).toMatchObject({ extras: read.extras });
+    expect(graph.spies.getEntityFull).toHaveBeenCalledWith(read.entity.id, { links: true, extras: true });
+  });
+
   it("F4 list (no search) maps window rows", async () => {
     spy(graph, "listEntitiesWindow").mockResolvedValue(
-      page([entity("n1", "Title", { schemaId: NOTE, properties: { body: "body", pinned: true } })]),
+      page([entityRead(entity(entityId("n1"), "Title", { schemaId: NOTE, properties: { body: "body", pinned: true } }), entityExtras())]),
     );
     const listed = await mod.list({});
     expect(listed.items[0]).toMatchObject({ title: "Title", pinned: true });
@@ -146,7 +160,7 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
 
   it("search = 1 search, 0 batch facets, 0 0 per-row reads, 0 window", async () => {
     spy(graph, "searchEntitiesByName").mockResolvedValue([
-      entity("n1", "n", { schemaId: NOTE }),
+      entityRead(entity(entityId("n1"), "n", { schemaId: NOTE }), entityExtras()),
     ]);
     await mod.list({ search: "x" });
     expect(graph.spies.searchEntitiesByName).toHaveBeenCalledTimes(1);
@@ -156,23 +170,25 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
 
   it("get = 1 getEntityFull + 1 getEntities (links present), 0 0 per-link", async () => {
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("n1", "N", { schemaId: NOTE }),
-      links: [link("n1", "c1", "mentions")],
+      extras: entityExtras(),
+      entity: entity(entityId("n1"), "N", { schemaId: NOTE }),
+      links: [link(entityId("n1"), entityId("c1"), "mentions")],
     });
     spy(graph, "getEntities").mockResolvedValue([
-      entity("c1", "Alice", { schemaId: "contacts.person" }),
+      entity(entityId("c1"), "Alice", { schemaId: "contacts.person" }),
     ]);
-    await mod.get({ id: "n1" });
+    await mod.get({ id: entityId("n1") });
     expect(graph.spies.getEntityFull).toHaveBeenCalledTimes(1);
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
   });
 
   it("get with no links makes 0 getEntities", async () => {
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("n1", "N", { schemaId: NOTE }),
+      extras: entityExtras(),
+      entity: entity(entityId("n1"), "N", { schemaId: NOTE }),
       links: [],
     });
-    await mod.get({ id: "n1" });
+    await mod.get({ id: entityId("n1") });
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(0);
   });
 });
@@ -193,37 +209,39 @@ describe("tst_cat_entity_one_type_005 — a linked summary carries its statement
     const graph = readGraph();
     const mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("n1", "My Note", { schemaId: NOTE, properties: { body: "b" } }),
+      extras: entityExtras(),
+      entity: entity(entityId("n1"), "My Note", { schemaId: NOTE, properties: { body: "b" } }),
       links: [
         {
           id: "l1",
           owner: "u1",
-          from: "n1",
-          to: "c1",
+          from: entityId("n1"),
+          to: entityId("c1"),
           kind: "mentions",
           createdAt: "2026-02-01T00:00:00Z",
-          origin: "agent",
+          origin: "derived",
           confidence: 0.7,
-          evidence: ["episode-1"],
+          evidence: [entityId("episode-1")],
           validFrom: null,
           validUntil: "2027-01-01T00:00:00Z",
         },
       ],
     });
     spy(graph, "getEntities").mockResolvedValue([
-      entity("c1", "Alice", { schemaId: "contacts.person", createdAt: "2026-01-05T00:00:00Z" }),
+      entity(entityId("c1"), "Alice", { schemaId: "contacts.person", createdAt: "2026-01-05T00:00:00Z" }),
     ]);
 
-    const view = await mod.get({ id: "n1" });
+    const view = await mod.get({ id: entityId("n1") });
 
     expect(view.linkedEntities).toEqual([
       {
-        id: "c1",
+        id: entityId("c1"),
         name: "Alice",
         schemaId: "contacts.person",
         linkKind: "mentions",
+        direction: "out",
         createdAt: "2026-01-05T00:00:00Z",
-        origin: "agent",
+        origin: "derived",
         confidence: 0.7,
         validUntil: "2027-01-01T00:00:00Z",
       },

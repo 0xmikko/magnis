@@ -1,0 +1,10 @@
+{
+  "name": "@magnis/plugin-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Magnis web plugin — owns web.link and web.page with their versions; sources/web reads and searches the web.",
+  "scripts": {
+    "typecheck": "cd ../../frontend && bun run typecheck"
+  }
+}

@@ -4,11 +4,11 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
-import type { GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
+import type { EnsureRequest, GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { entity } from "@magnis/declare";
 import { descriptorFrom } from "@magnis/declare/derive";
-import { entity as storedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { entityId, entity as storedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
 
 import { TelegramModule } from "./module/service.ts";
 import { account, chat, message } from "./entities.ts";
@@ -42,7 +42,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     applyBatch: (fragment: GraphBatchInput) => {
       batches.push(fragment);
       return Promise.resolve({
-        ids: Object.fromEntries(fragment.entities.map((e) => [e.key, `id:${e.key}`])),
+        ids: Object.fromEntries(fragment.entities.map((e) => [e.key, entityId(`id:${e.key}`)])),
         created: fragment.entities.length,
         updated: 0,
         linksAdded: fragment.links.length,
@@ -51,16 +51,20 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     },
     listEntitiesWindow: () => Promise.resolve(page([])),
     getEntities: (ids) => Promise.resolve(ids.map((id) => ({
-      ...storedEntity(id, "Magnis Builders", { schemaId: "telegram.chat", indexed: true }), syncEnabled: true, syncRevision: "0",
+      ...storedEntity(id, "Magnis Builders", { schemaId: "telegram.chat" }), syncEnabled: true, syncRevision: "0",
     }))),
-    // The message carries a link and a photo: a link becomes a web entity of
-    // its own, and downloadable media becomes a file entity.
-    webRegister: () => Promise.resolve("web-1"),
-    webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-1")),
+    // The message carries a link and a photo: the Web module declares the
+    // link through ensure, and downloadable media becomes a file entity.
     fileRegister: () => Promise.resolve("file-1"),
     fileRegisterBatch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-1")),
   });
-  const mod = mountModule(TelegramModule, { graph }).module;
+  const rpc = {
+    execute: () => Promise.reject(new Error("unexpected rpc.execute")),
+    ensure: (request: EnsureRequest) => Promise.resolve({
+      refs: request.items.map((item) => ({ kind: "canonical" as const, schemaId: "web.link", canonicalKey: (item as { url: string }).url })),
+    }),
+  };
+  const mod = mountModule(TelegramModule, { graph, rpc }).module;
   await mod.ingest({
     envelopes: [
       base({

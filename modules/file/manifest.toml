@@ -8,7 +8,7 @@
 id = "file"
 version = "0.1.0"
 # Plugin API version this manifest targets; the host accepts exactly 0.2.0.
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 # FileService is a host primitive used by attachment-capable modules, so its
 # schema owner must exist before optional modules can ingest attachments.
 tier = "system"

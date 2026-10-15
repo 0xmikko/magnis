@@ -15,8 +15,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { SourceCertificationReceipt } from "@magnis/connector-sdk";
+import { handleMessage } from "../packages/connector-sdk/index";
 import {
   accountCompatibilityHash,
+  decodeSourceCertificationReceipt,
   encodeSourceCertificationReceipt,
   v1ReceiverInterfaceHash,
 } from "../packages/testkit/receipt";
@@ -207,7 +209,7 @@ function published(discovered: readonly StagedCatalogPackage[]): PublishedCatalo
       sha256: createHash("sha256").update(`${entry.kind}:${entry.id}`).digest("hex"),
     },
     dependsOn: entry.kind === "source" ? ["email"] : [],
-    ...(entry.kind === "module" ? { tier: "community" as const } : {}),
+    tier: "community" as const,
   }));
 }
 
@@ -356,7 +358,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
 
     // @tested-by: tst_cat_index_v3_001
     // @invariant: the list is the kind; every entry carries dependsOn in
-    // camelCase, a module its tier, a source its package hash and certificate.
+    // camelCase and its tier, a source its package hash and certificate.
     expect([index.schemaVersion, index.generatedFrom]).toEqual([3, "fixture-sha"]);
     expect(index.modules).toEqual([{
       id: "email",
@@ -374,7 +376,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     expect(index.sources.map((entry) => [entry.id, Object.keys(entry).sort()])).toEqual(
       ["alpha", "zeta"].map((id) => [id, [
         "archive", "certification", "dependsOn", "detailsUrl", "dev", "iconUrl", "id",
-        "packageHash", "publisher", "summary", "title", "version",
+        "packageHash", "publisher", "summary", "tier", "title", "version",
       ]]),
     );
     expect(result.discovered).toBe(discovered);
@@ -723,5 +725,152 @@ describe("tst_cat_src_cert_002 immutable certification evidence", () => {
     await expect(mintSourceCertificationReceipt(source)).rejects.toThrow(
       "source 'mutating' staged package changed during certification evidence",
     );
+  });
+});
+
+function commandSourceManifest(id: string, delivery: "none" | "poll"): string {
+  return [
+    `id = "${id}"`,
+    'version = "1.0.0"',
+    `title = "${id}"`,
+    'summary = "fixture"',
+    'publisher = "ai.magnis"',
+    'surfaces = ["web"]',
+    '',
+    '[sync]',
+    ...(delivery === "none" ? ['mode = "none"'] : ['mode = "poll"', 'interval_secs = 30']),
+    '',
+    '[certification]',
+    'disposition = "admissible"',
+    'protocol = "magnis.source/1"',
+    'authority = "module_sync"',
+    'release_tier = "production"',
+    `delivery = "${delivery}"`,
+    ...(delivery === "poll" ? ['poll_interval_secs = 30'] : []),
+    `server_info_name = "${id}"`,
+    'server_info_version = "1.0.0"',
+    'runtime_kind = "connector_sdk"',
+    'runtime_version = "0.1.0"',
+    'advertised_tools = []',
+    `callable_operations = ${JSON.stringify(delivery === "none"
+      ? ["initialize", "magnis.execute", "tools/list"]
+      : ["initialize", "magnis.sync.fetch", "tools/list"])}`,
+    `scenario_ids = ["scn_src_v1_${id}_001"]`,
+    '',
+    '[certification.account_compatibility]',
+    'auth = "none"',
+    'identity_rule = "source_id"',
+    'credential_keys = []',
+    'minted_credential_keys = []',
+    'migrates_from = []',
+    '',
+    '[[certification.account_compatibility.surfaces]]',
+    'name = "web"',
+    `receiver_interface_hash = "${v1ReceiverInterfaceHash("web")}"`,
+    '',
+  ].join("\n");
+}
+
+/**
+ * @test-id: tst_cat_src_cert_none_001
+ * @scenario: scn_src_certification_none_001
+ * @covers: packages/connector-sdk/index.ts::runConnector
+ * @covers: scripts/certify-sources.ts::decodeSourceCertificationDeclaration
+ * @covers: packages/testkit/receipt.ts::decodeSourceCertificationReceipt
+ * @deterministic: yes
+ * @fixtures: a bundled connector that only answers commands
+ *
+ * Test environment: a Source tree in a test-owned temporary directory, staged
+ * and bundled as the catalog build does. Clients: real stdio certification
+ * probe and the connector's message handler. Mocks: none.
+ */
+describe("tst_cat_src_cert_none_001 a Source that only answers commands", () => {
+  test("certifies with delivery none, no auth, no fetch and a null cursor rule and progress", async () => {
+    const root = temporaryRoot();
+    const sourceRoot = join(root, "sources", "webfx");
+    mkdirSync(join(sourceRoot, "src"), { recursive: true });
+    writeFileSync(join(sourceRoot, "manifest.toml"), commandSourceManifest("webfx", "none"));
+    writeFileSync(
+      join(sourceRoot, "src", "main.ts"),
+      `import { runConnector } from ${JSON.stringify(join(import.meta.dir, "..", "packages", "connector-sdk", "index.ts"))};
+await runConnector({
+  name: "webfx",
+  version: "1.0.0",
+  surfaces: ["web"],
+  execute: { read: (args) => Promise.resolve({ url: args.url }) },
+});
+`,
+    );
+    const [release] = discoverSourceReleaseManifests(join(root, "sources"));
+    if (release === undefined || release.disposition !== "admissible") {
+      throw new Error("the command-only fixture was not discovered as admissible");
+    }
+    expect(release.declaration.delivery).toBe("none");
+    expect(release.declaration.accountCompatibility.input.surfaces).toEqual([
+      { name: "web", cursorTerminalNull: null, progress: null, receiverInterfaceHash: v1ReceiverInterfaceHash("web") },
+    ]);
+
+    const catalogOut = join(root, "catalog");
+    stageSourcePackage(release, join(catalogOut, "packages", "source", "webfx"));
+    const [entry] = discoverStagedCatalog(catalogOut);
+    if (entry === undefined) throw new Error("the staged fixture was not discovered");
+    const minted = await mintSourceCertificationReceipt(entry);
+    expect(minted).toMatchObject({
+      authority: "module_sync", releaseTier: "production", delivery: "none", auth: null, surfaces: ["web"],
+      advertisedTools: [], callableOperations: ["initialize", "magnis.execute", "tools/list"],
+    });
+    const encoded = encodeSourceCertificationReceipt(minted);
+    expect(decodeSourceCertificationReceipt(encoded, {
+      packageHash: entry.packageHash, definitionHash: entry.definitionHash,
+    })).toEqual(minted);
+
+    const command = { name: "webfx", version: "1.0.0", surfaces: ["web"], execute: { read: () => Promise.resolve({ ok: true }) } };
+    expect(await handleMessage({ jsonrpc: "2.0", id: 1, method: "initialize" }, command)).toMatchObject({
+      result: { capabilities: { experimental: { magnis: { sync: { surfaces: ["web"], mode: "none" } } } } },
+    });
+    expect(await handleMessage({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "magnis.execute", arguments: { action: "read" } } }, command))
+      .toEqual({ jsonrpc: "2.0", id: 2, result: { ok: true } });
+    expect(await handleMessage({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "web" } } }, command))
+      .toMatchObject({ error: { code: -32601, message: expect.stringMatching(/not implemented/) } });
+  });
+
+  test("refuses the same compatibility entry without a cursor rule and progress on a poll Source", () => {
+    const root = temporaryRoot();
+    const sourceRoot = join(root, "sources", "pollfx");
+    mkdirSync(sourceRoot, { recursive: true });
+    writeFileSync(join(sourceRoot, "manifest.toml"), commandSourceManifest("pollfx", "poll"));
+    expect(() => discoverSourceReleaseManifests(join(root, "sources"))).toThrow(/progress/);
+  });
+});
+
+/**
+ * @test-id: tst_cat_index_source_tier_001
+ * @scenario: scn_catalog_system_source_001
+ * @covers: scripts/certify-sources.ts::writeCertifiedCatalogIndexes
+ * @deterministic: yes
+ * @fixtures: temporary staged catalog tree with one Source and one module
+ */
+describe("tst_cat_index_source_tier_001 a Source's tier", () => {
+  test("a Source with tier system appears with it in index.v3.json, and a card without a tier is refused", async () => {
+    const root = temporaryRoot();
+    stageModule(root, "email");
+    stageSource(root, "alpha", ["email"]);
+    const discovered = discoverStagedCatalog(root);
+    const receipts = join(root, "receipt-input");
+    mkdirSync(receipts, { recursive: true });
+    for (const entry of discovered) {
+      if (entry.kind !== "source") continue;
+      writeFileSync(join(receipts, `${entry.packageHash}.json`), encodeSourceCertificationReceipt(await mintSourceCertificationReceipt(entry)));
+    }
+    const cards = published(discovered).map((card) => (card.kind === "source" ? { ...card, tier: "system" as const } : card));
+
+    await writeCertifiedCatalogIndexes({ catalogOut: root, generatedFrom: "fixture-sha", receiptInputDir: receipts, discovered, publishedPackages: cards });
+    const index = JSON.parse(readFileSync(join(root, "index.v3.json"), "utf8")) as { sources: { id: string; tier: string }[] };
+    expect(index.sources.map(({ id, tier }) => [id, tier])).toEqual([["alpha", "system"]]);
+
+    const untiered = cards.map((card) => (card.kind === "source" ? { ...card, tier: undefined } : card));
+    await expect(writeCertifiedCatalogIndexes({
+      catalogOut: root, generatedFrom: "fixture-sha", receiptInputDir: receipts, discovered, publishedPackages: untiered,
+    })).rejects.toThrow("source 'alpha' has no tier for index.v3.json");
   });
 });

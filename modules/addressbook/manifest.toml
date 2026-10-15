@@ -9,7 +9,7 @@
 id = "addressbook"
 version = "0.1.0"
 # Plugin API version this manifest targets; the host accepts exactly 0.2.0.
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 title = "Address book"
 summary = "Address book contacts from your accounts, linked to the people they describe."
 # Reverse-domain publisher identity.

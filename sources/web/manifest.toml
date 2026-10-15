@@ -1,0 +1,49 @@
+# web — reads and searches the web for the Web module. bun/TS stdio MCP
+# server speaking the Magnis Source profile.
+#
+# It answers commands only: `read` fetches one public URL as Markdown, with
+# its freshness, and `search` asks DuckDuckGo. There is no login, no sync and
+# no state: every command is one request and one answer. Redirects and private
+# addresses are checked at every hop. The `web` module owns everything stored.
+
+id = "web"
+version = "1.0.0"
+title = "Web"
+summary = "Reads web pages and searches the web for the Web module."
+publisher = "ai.magnis"
+surfaces = ["web"]
+# The module that commands the `web` surface and stores what it answers.
+dependsOn = ["web"]
+# Reading a link must work in every workspace, as the Web module does.
+tier = "system"
+
+[sync]
+# Commands only: no pass, no worker, no interval.
+mode = "none"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "production"
+delivery = "none"
+server_info_version = "1.0.0"
+server_info_name = "web"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = []
+callable_operations = ["initialize", "magnis.execute:read", "magnis.execute:search", "tools/list"]
+scenario_ids = ["tst_web_src_md_001", "tst_web_src_read_001", "tst_web_src_search_001"]
+
+[certification.account_compatibility]
+# No login: each user has one account without credentials, named web.
+auth = "none"
+identity_rule = "source_id"
+credential_keys = []
+minted_credential_keys = []
+migrates_from = []
+
+# A surface that delivers no pages has no cursor rule and no progress.
+[[certification.account_compatibility.surfaces]]
+name = "web"
+receiver_interface_hash = "sha256:8f4577a8b24bf5445c3e7abdc27e2f031761fe1ebacfe26f78c6062486987ff1"

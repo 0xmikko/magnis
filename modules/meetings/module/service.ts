@@ -5,7 +5,7 @@
 // MeetingDetailView) and the UI's plugins/meetings/ui copies.
 //
 // Read-time enrichment ported from the native domain adapter: attendees are the
-// event's `attendee` edges, each resolving through its address node to a
+// event's `meetings.attendee` edges, each resolving through its address node to a
 // contacts.person over `identity` (plan §3/§6), and get's
 // linkedEntities resolve the entity's link neighbours. Canonical is deferred to
 // {} on this hot path (mirrors the email/telegram modules; the detail UI is verified
@@ -319,7 +319,7 @@ export class MeetingsModule {
     });
 
     // S5: the dictionary is the record — the attendees are NOT in it, they are
-    // the event's `attendee` edges.
+    // the event's `meetings.attendee` edges.
     const data = {
       title: params.title,
       starts_at: params.starts_at,
@@ -447,7 +447,7 @@ export class MeetingsModule {
   }
 
   /// Upsert one calendar event as a NODE (idempotent on its external id) plus the
-  /// `attendee` edges its invite lists, then, for LIVE events, assemble the
+  /// `meetings.attendee` edges its invite lists, then, for LIVE events, assemble the
   /// trigger.check with those attendees' address ids.
   private async ingestUpsert(env: SyncEnvelope, triggers: TriggerCheckEvent[], generation: string | undefined): Promise<boolean> {
     const remoteId = env.remoteId;
@@ -487,7 +487,7 @@ export class MeetingsModule {
       links.push({
         fromKey: remoteId,
         toKey: key,
-        kind: "attendee",
+        kind: "meetings.attendee",
         confidence: null,
         metadata: a.name === undefined ? null : { display_name: a.name },
         declaredBy: remoteId,
@@ -511,7 +511,7 @@ export class MeetingsModule {
     const current = new Set(addressIds);
     const existing = await this.graph.listLinksForEntity(entityId);
     for (const edge of existing) {
-      if (edge.kind !== "attendee" || edge.from !== entityId) continue;
+      if (edge.kind !== "meetings.attendee" || edge.from !== entityId) continue;
       if (!current.has(edge.to)) {
         await this.graph.deleteLink(edge.id);
       }
@@ -570,7 +570,7 @@ export class MeetingsModule {
       await this.graph.addLink({
         from: eventId,
         to,
-        kind: "attendee",
+        kind: "meetings.attendee",
         ...(a.name === null ? {} : { metadata: { display_name: a.name } }),
       });
     }

@@ -1,24 +1,20 @@
 import type { FileDetails } from "../types.ts";
 
-/// Route-correct serving URL: local content serves via
-/// `/files/{entity_id}` (the actual `GET /files/:entity_id` route); otherwise the
-/// `cloud_url` (S3) if set. Local takes precedence, mirroring native
-/// `resolve_url`'s ordering — but native built `/files/{local_path}`, which does
-/// NOT match the entity-id route, so we correct it to the entity id.
+/// Serving URL: stored bytes serve via `/files/{entity_id}` (the
+/// `GET /files/:entity_id` route, which reads them by `contentHash`); otherwise
+/// the `cloud_url` (S3) if set. Stored bytes take precedence.
 export function resolveUrl(entityId: string, details: FileDetails): string | null {
-  if (details.local_path !== null && details.local_path !== undefined) return `/files/${entityId}`;
+  if (details.contentHash !== null && details.contentHash !== undefined) return `/files/${entityId}`;
   if (details.cloud_url !== null && details.cloud_url !== undefined) return details.cloud_url;
   return null;
 }
 
 /// Whether the file has retrievable content visible from graph metadata. The
-/// native check also probed `source_ref.dest_subpath` on disk; the V8 plugin has
-/// no disk access, and the download worker sets `local_path` via `mark_downloaded`
-/// on completion, so `local_path || cloud_url` is authoritative for
-/// normally-downloaded files. Inconsistent dest_subpath-only rows are skipped.
+/// host writes `contentHash` once the bytes are in its byte store, on upload or
+/// when a download completes, so `contentHash || cloud_url` is authoritative.
 export function hasContent(details: FileDetails): boolean {
   return (
-    (details.local_path !== null && details.local_path !== undefined) ||
+    (details.contentHash !== null && details.contentHash !== undefined) ||
     (details.cloud_url !== null && details.cloud_url !== undefined)
   );
 }

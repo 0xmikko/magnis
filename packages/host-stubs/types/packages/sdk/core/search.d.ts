@@ -6,6 +6,29 @@ import { z } from "zod";
  * contract.
  */
 export declare const SearchResultSchema: z.ZodObject<{
+    extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+        syncEnabled: z.ZodBoolean;
+        syncRevision: z.ZodString;
+        pinOrder: z.ZodNullable<z.ZodInt>;
+        archived: z.ZodBoolean;
+        private: z.ZodBoolean;
+        indexed: z.ZodEnum<{
+            indexed: "indexed";
+            pending: "pending";
+            refused: "refused";
+        }>;
+    }, z.core.$strict>, z.ZodObject<{
+        syncEnabled: z.ZodNull;
+        syncRevision: z.ZodNull;
+        pinOrder: z.ZodNullable<z.ZodInt>;
+        archived: z.ZodBoolean;
+        private: z.ZodBoolean;
+        indexed: z.ZodEnum<{
+            indexed: "indexed";
+            pending: "pending";
+            refused: "refused";
+        }>;
+    }, z.core.$strict>]>>;
     id: z.ZodString;
     name: z.ZodNullable<z.ZodString>;
     schemaId: z.ZodString;
@@ -56,44 +79,53 @@ export declare const EntitySearchItemSchema: z.ZodObject<{
             externalId: z.ZodString;
         }, z.core.$strict>;
         canonicalKey: z.ZodNullable<z.ZodString>;
-        id: z.ZodString;
-        owner: z.ZodString;
+        id: z.ZodUnion<readonly [z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">, z.ZodLiteral<"00000000-0000-0000-0000-000000000000">]>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
-        indexed: z.ZodBoolean;
-        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
-        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
     }, z.core.$strict>, z.ZodObject<{
         keys: z.ZodArray<z.ZodString>;
-        origin: z.ZodLiteral<"agent">;
+        origin: z.ZodLiteral<"derived">;
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-        id: z.ZodString;
-        owner: z.ZodString;
+        id: z.ZodUnion<readonly [z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">, z.ZodLiteral<"00000000-0000-0000-0000-000000000000">]>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
-        indexed: z.ZodBoolean;
-        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
-        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
     }, z.core.$strict>], "origin">;
+    extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+        syncEnabled: z.ZodBoolean;
+        syncRevision: z.ZodString;
+        pinOrder: z.ZodNullable<z.ZodInt>;
+        archived: z.ZodBoolean;
+        private: z.ZodBoolean;
+        indexed: z.ZodEnum<{
+            indexed: "indexed";
+            pending: "pending";
+            refused: "refused";
+        }>;
+    }, z.core.$strict>, z.ZodObject<{
+        syncEnabled: z.ZodNull;
+        syncRevision: z.ZodNull;
+        pinOrder: z.ZodNullable<z.ZodInt>;
+        archived: z.ZodBoolean;
+        private: z.ZodBoolean;
+        indexed: z.ZodEnum<{
+            indexed: "indexed";
+            pending: "pending";
+            refused: "refused";
+        }>;
+    }, z.core.$strict>]>>;
     relevance: z.ZodExactOptional<z.ZodObject<{
         score: z.ZodNumber;
         channel: z.ZodEnum<{

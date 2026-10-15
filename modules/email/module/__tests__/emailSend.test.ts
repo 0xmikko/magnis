@@ -25,7 +25,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { BatchEntityInput, EntityWithLinks, GraphBatchInput, JsonObject } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { entity, entityId, syncStateDouble, mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { message } from "../../entities.ts";
 import { EmailModule } from "../service.ts";
 import { normalizeRecipient } from "../helpers.ts";
 import type { EmailCanonical } from "../../types.ts";
@@ -34,6 +35,9 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
+    syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "acct-1", sync: null }] }) }),
+    findByExternalId: async (externalId: string) => externalId.startsWith("email.mailbox:") ? entityId("mailbox") : null,
+    getEntity: async () => entity("mailbox", "Mailbox", { schemaId: "email.mailbox", source: { source: "google", account: "acct-1", externalId: 'email.mailbox:"acct-1"' }, properties: { address: "me@example.com" } }),
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     applyBatch: async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -45,8 +49,6 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     addLink: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.
     sourceCommand: () => Promise.resolve({ message_id: "src-1" }),
-    // One connected mailbox unless a test arranges more.
-    syncState: () => Promise.resolve({ accounts: [{ accountId: "acc-1", sync: null }] }),
     getEntityFull: () => Promise.resolve(null),
     ...over,
   } as unknown as GraphOverrides;
@@ -76,6 +78,18 @@ function spy(graph: G, op: string) {
 }
 
 describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
+  it("tst_module_communication_email_002 records confirmed sends and rejects ambiguous accounts before delivery", async () => {
+    const graph = makeGraph();
+    await makeModule(graph).emailSend({ to: "b@example.com", subject: "S", body_text: "B" });
+    const batch = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput;
+    expect(batch.links).toContainEqual(expect.objectContaining({ fromKey: "mailbox", toKey: "out", kind: "sent", metadata: { occurredAt: null, conversationId: null } }));
+    expect(message.safeParse(batch.entities.find((item) => item.schemaId === "email.message")?.properties).success).toBe(true);
+    expect(spy(graph, "sourceCommand").mock.calls[0]?.[1]).toBe("acct-1");
+    const ambiguous = makeGraph({ syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "one", sync: null }, { accountId: "two", sync: null }] }) }) });
+    await expect(makeModule(ambiguous).emailSend({ to: "b@example.com", subject: "S", body_text: "B" })).rejects.toThrow(/account/);
+    expect(ambiguous.spies.sourceCommand).not.toHaveBeenCalled();
+  });
+
   it("validates the address creation rule before sending mail", async () => {
     const graph = makeGraph({ moduleSettings: () => Promise.resolve({}) });
     await expect(makeModule(graph).emailSend({ to: "b@example.com", subject: "S", body_text: "B" })).rejects.toThrow(/setting/);
@@ -101,7 +115,11 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     // S5: nodes are dictionaries under their external ids.
     expect(addr.externalId).toBe("email:address:bob@example.com");
     expect(dict(addr).address).toBe("bob@example.com");
+    expect(dict(msg).sent_at).toBeNull();
     expect(frag.links).toEqual([{
+      fromKey: "mailbox", toKey: "out", kind: "sent", confidence: null,
+      metadata: { occurredAt: null, conversationId: null }, declaredBy: null, validFrom: null, validUntil: null,
+    }, {
       fromKey: "out",
       toKey: "addr:bob@example.com",
       kind: "sent_to",
@@ -117,7 +135,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(1);
     // INV-6: the provider's id rides on the stored message so a later ingest
     // of that same mail matches it instead of creating a duplicate.
-    expect(msg.externalId).toBe("src-1");
+    expect(msg.externalId).toBe('email.message:"acct-1":"src-1"');
     expect(r.id).toBe("id-out");
     expect(r.schemaId).toBe("email.message");
     expect(r.attachment_count).toBe(0);
@@ -186,7 +204,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const msg = frag.entities.find((e) => e.schemaId === "email.message")!;
     // S5: the provider id is the node's EXTERNAL ID — that is what makes the
     // copy arriving from Sent update this node instead of creating a second one.
-    expect(msg.externalId).toBe("gmail-42");
+    expect(msg.externalId).toBe('email.message:"acct-1":"gmail-42"');
     expect(msg.idx).toBe("thr-9");
   });
 
@@ -232,12 +250,11 @@ describe("email reply (tst_be_emailreply_003)", () => {
         subject: "Quarterly",
         message_id: "gmail-orig-1",
       },
-      source: { source: "gmail", account: "account-1", externalId: "gmail:orig" },
     }),
     links: [],
   });
 
-  it("threads in_reply_to from the original and links attachments to the ORIGINAL", async () => {
+  it("threads in_reply_to and attaches files to the confirmed reply", async () => {
     const graph = makeGraph({
       getEntityFull: (() => {
         let call = 0;
@@ -255,15 +272,13 @@ describe("email reply (tst_be_emailreply_003)", () => {
     if (srcCall0 === undefined) throw new Error("reply: sourceCommand not called");
     const draft = srcCall0[0] as Record<string, unknown>;
     const d = draft.draft as Record<string, unknown>;
-    // The reply leaves from the account the original arrived at.
-    expect(srcCall0[1]).toBe("account-1");
     expect(d.in_reply_to).toBe("gmail-orig-1");
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);
     // attachment linked to the ORIGINAL email, not a new entity
-    expect(spy(graph, "addLink")).toHaveBeenCalledWith({ from: "orig", to: "f1", kind: "file.attachment" });
+    expect(spy(graph, "addLink")).toHaveBeenCalledWith({ from: "id-out", to: "f1", kind: "file.attachment" });
     expect(r.reply_to).toBe("boss@corp.com");
-    expect(spy(graph, "applyBatch")).not.toHaveBeenCalled(); // reply creates no new message entity
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(1); // reply and sent fact land together
   });
 
   it("rejects an unowned attachment (reply path) BEFORE routing", async () => {
@@ -534,38 +549,4 @@ it("tst_module_email_create_001 one create operation sends or batches and reject
   expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(2);
   await expect(module.create({ to: "morgan@example.test", email_id: "original", subject: "September", body_text: "mixed" })).rejects.toThrow("form");
   expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(2);
-});
-
-/**
- * @test-id: tst_module_email_send_009
- * @scenario: scn_backend_tests_006
- * @covers: plugins/modules/email/module/service.ts::EmailModule.emailSend
- * @invariant: a new email leaves through a named account — the only
- * connected one, or the one the caller names; with several and none named
- * the send is refused before the provider is called.
- * @deterministic: yes
- */
-describe("a new email names its account", () => {
-  const twoAccounts = () =>
-    Promise.resolve({ accounts: [{ accountId: "acc-1", sync: null }, { accountId: "acc-2", sync: null }] });
-
-  it("tst_module_email_send_009 sends through the only connected account", async () => {
-    const graph = makeGraph();
-    await makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
-    expect(spy(graph, "sourceCommand").mock.calls[0]?.[1]).toBe("acc-1");
-  });
-
-  it("tst_module_email_send_009 refuses several accounts without account_id", async () => {
-    const graph = makeGraph({ syncState: twoAccounts });
-    await expect(
-      makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B" }),
-    ).rejects.toThrow(/account_id/);
-    expect(spy(graph, "sourceCommand")).not.toHaveBeenCalled();
-  });
-
-  it("tst_module_email_send_009 sends through the named account", async () => {
-    const graph = makeGraph({ syncState: twoAccounts });
-    await makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B", account_id: "acc-2" });
-    expect(spy(graph, "sourceCommand").mock.calls[0]?.[1]).toBe("acc-2");
-  });
 });

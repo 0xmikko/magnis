@@ -10,5 +10,5 @@ export const TRIGGER_CONFIG = "triggers.trigger.config";
 export const TRIGGER_EXECUTION = "triggers.trigger.execution";
 /** Link kind: a trigger `watches` an entity. */
 export const WATCHES = "watches";
-/** Link kind: a trigger belongs to a parent episode. Own-prefixed (S2). */
-export const BELONGS_TO = "triggers.belongs_to";
+/** Link kind: a trigger belongs to a parent episode. Shared organizational membership. */
+export const BELONGS_TO = "belongs_to";

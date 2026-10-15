@@ -7,14 +7,14 @@
  * reverse, so zod reaches neither the isolate's bundle nor the UI's types.
  *
  * The message record is the provider's dictionary MINUS what edges now carry:
- * the recipients (sent_to), the sender's address (authored_by) and the
+ * the recipients (sent_to), the sender's address (received_from) and the
  * attachments (file.attachment). Declaring them here would invite writing them
  * again as strings beside the edges that replaced them.
  */
 import { z } from "zod";
 import { entity, moment, type AssertEqual } from "@magnis/declare";
 
-import type { EmailAddressDetails, EmailMessageDetails } from "./types.ts";
+import type { EmailAddressDetails, EmailMessageDetails, EmailMailboxDetails, EmailThreadDetails } from "./types.ts";
 
 export const message = entity(
   {
@@ -65,3 +65,19 @@ export const address = entity(
 
 const _addressIsTheModulesOwnType: AssertEqual<z.infer<typeof address>, EmailAddressDetails> = true;
 void _addressIsTheModulesOwnType;
+
+export const mailbox = entity(
+  { id: "email.mailbox", name: "Email mailbox", description: "A connected email account.", roles: ["identity_channel"] },
+  { address: z.string().nullable() },
+  { order: ["address", "asc"] },
+) satisfies z.ZodType<EmailMailboxDetails>;
+const _mailboxIsTheModulesOwnType: AssertEqual<z.infer<typeof mailbox>, EmailMailboxDetails> = true;
+void _mailboxIsTheModulesOwnType;
+
+export const thread = entity(
+  { id: "email.thread", name: "Email thread", description: "A conversation within one connected email account.", roles: ["container"] },
+  { threadId: z.string() },
+  { order: ["threadId", "asc"] },
+) satisfies z.ZodType<EmailThreadDetails>;
+const _threadIsTheModulesOwnType: AssertEqual<z.infer<typeof thread>, EmailThreadDetails> = true;
+void _threadIsTheModulesOwnType;

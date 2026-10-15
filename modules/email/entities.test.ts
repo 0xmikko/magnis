@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import { entityId, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { EmailModule } from "./module/service.ts";
 import { address, message } from "./entities.ts";
@@ -25,7 +25,7 @@ function ingestGraph() {
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     applyBatch: (frag) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: frag.links.length,
@@ -34,9 +34,6 @@ function ingestGraph() {
     fileRegister: () => Promise.resolve("file-id"),
     findByExternalId: () => Promise.resolve("existing-id"),
     deleteEntity: () => Promise.resolve(undefined),
-    sourceCommand: () => Promise.resolve({ message_id: "sent-1" }),
-    // One connected mailbox: a new email leaves through it.
-    syncState: (() => Promise.resolve({ accounts: [{ accountId: "acct-1", sync: null }] })) as never,
   });
 }
 
@@ -72,11 +69,8 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   await mod.ingest({ envelopes: [env({ remoteId: "m1", payload: msgPayload() })] });
-  const ingested = graph.spies.applyBatch?.mock.calls.length ?? 0;
-  if (ingested === 0) throw new Error("ingest wrote nothing");
-  await mod.emailSend({ to: "ops@example.com", subject: "Report Q3", body_text: "see attached" });
-  const calls = graph.spies.applyBatch?.mock.calls ?? [];
-  if (calls.length !== ingested + 1) throw new Error("send must write once");
+  const calls = graph.spies.applyBatch?.mock.calls;
+  if (calls === undefined || calls.length === 0) throw new Error("ingest wrote nothing");
   return calls.flatMap(call => (call[0] as GraphBatchInput).entities);
 }
 

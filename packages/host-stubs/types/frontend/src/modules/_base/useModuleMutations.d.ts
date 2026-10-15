@@ -17,7 +17,7 @@ export declare function useModulePin(queryKeys: ModuleQueryKeys): import("@tanst
     ok: true;
 }, Error, {
     entityId: string;
-    pinOrder?: number | undefined;
+    pinOrder: number;
 }, unknown>;
 export declare function useModuleUnpin(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<{
     ok: true;

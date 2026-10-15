@@ -1,6 +1,7 @@
 // @magnis/testkit/module — self-tests. Proves the throwing mockGraph, both
 // mountModule modes, and the DTO builders, so the 9 modules that depend on the
 // kit inherit a verified harness.
+import { nilId } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   definePlugin,
@@ -14,6 +15,7 @@ import {
 } from "@magnis/plugin-sdk";
 import {
   entity,
+  entityId,
   link,
   linkedEntity,
   mockGraph,
@@ -97,6 +99,28 @@ describe("mockGraph", () => {
       .toThrow(`migration limit must be between 1 and ${String(pageLimitMax)}`);
     await expect(graph.listSyncMigrationEntities({ schemaId: "x.profile", after: null, limit: pageLimitMax }))
       .resolves.toEqual({ items: [], next: null });
+  });
+
+  /**
+   * @test-id: tst_testkit_mockgraph_005
+   * @covers: packages/testkit/module.ts::mockGraph
+   * @deterministic: yes
+   * @fixtures: overridden period listing and byte store write
+   */
+  it("tst_testkit_mockgraph_005 refuses a period page and a byte write the host refuses, ahead of the override", async () => {
+    const graph = mockGraph({
+      listLinkPeriods: (params) => Promise.resolve({ items: [], total: 0, limit: params.limit, offset: params.offset }),
+      bytesPut: () => Promise.resolve({ contentHash: "a".repeat(64), sizeBytes: 1 }),
+    });
+    const periods = { fromEntityId: "00000000-0000-4000-8000-000000000001", kind: "contents", notAfter: null, offset: 0 };
+
+    // @tested-by: tst_testkit_mockgraph_005
+    // @invariant: the host serves at most 100 periods and stores at most 3 MiB
+    // of text per call; a module asking for more fails in its tests too.
+    expect(() => graph.listLinkPeriods({ ...periods, limit: 101 })).toThrow("link period limit must be between 1 and 100");
+    await expect(graph.listLinkPeriods({ ...periods, limit: 100 })).resolves.toMatchObject({ limit: 100 });
+    expect(() => graph.bytesPut({ text: "x".repeat(3 * 1024 * 1024 + 1) })).toThrow("bytesPut takes at most 3 MiB of UTF-8 text");
+    await expect(graph.bytesPut({ text: "x" })).resolves.toMatchObject({ sizeBytes: 1 });
   });
 });
 
@@ -276,12 +300,21 @@ describe("mountModule — dispatch", () => {
 });
 
 describe("builders", () => {
+  it("tst_testkit_graph_domain_001 excludes operational fields from a domain Entity", () => {
+    const value = entity("10000000-0000-0000-0000-000000000001", "Acme");
+    for (const key of ["owner", "indexed", "isPinned", "pinOrder", "isArchived", "syncEnabled", "syncRevision", "extras"]) {
+      expect(value).not.toHaveProperty(key);
+    }
+  });
+
   it("tst_testkit_builders_001 produce the real DTO shapes", () => {
-    expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schemaId: "", origin: "canonical" });
+    expect(() => entity(nilId, "Transient")).toThrow("transient nil ID");
+    expect(entityId(entityId("a"))).toBe(entityId("a"));
+    expect(entity("a", "Acme")).toMatchObject({ id: entityId("a"), name: "Acme", schemaId: "", origin: "canonical" });
     expect(entity("a", "Acme", { schemaId: "companies.company" }).schemaId).toBe("companies.company");
-    expect(link("a", "b", "works_at")).toMatchObject({ from: "a", to: "b", kind: "works_at", validUntil: null });
+    expect(link("a", "b", "works_at")).toMatchObject({ from: entityId("a"), to: entityId("b"), kind: "works_at", validUntil: null });
     expect(linkedEntity(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
-      from: "a",
+      from: entityId("a"),
       kind: "authored_by",
     });
     expect(page([entity("a", "Acme")])).toMatchObject({ total: 1, offset: 0 });

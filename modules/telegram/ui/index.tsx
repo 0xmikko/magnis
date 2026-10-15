@@ -108,15 +108,15 @@ function mapTelegramChatToListItem(raw: Record<string, unknown>): ListItem {
     preview: c.last_message ?? null,
     timestamp: time,
     avatarUrl: c.avatar_url ?? null,
-    isPinned: c.is_pinned === true,
+    pinOrder: c.extras.pinOrder,
+    isArchived: c.extras.archived,
     unreadCount: undefined, // Backend doesn't provide unread count in list yet
     metadata: {
       chatId: c.chat_id,
       initials: initialsFromName(name),
       avatarColor: pickAvatarColor(name),
       muted: false,
-      isIndexed: c.indexed,
-      syncEnabled: c.syncEnabled,
+      syncEnabled: c.extras.syncEnabled,
     },
   };
 }
