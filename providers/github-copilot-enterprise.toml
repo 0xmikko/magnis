@@ -1,0 +1,11 @@
+id = "github-copilot-enterprise"
+displayName = "GitHub Copilot Enterprise"
+adapterId = "openai-compatible"
+authKind = "native"
+requiresEndpoint = false
+catalogSourceIds = ["models-dev"]
+models = []
+
+[configuration]
+kind = "model-provider"
+fields = []

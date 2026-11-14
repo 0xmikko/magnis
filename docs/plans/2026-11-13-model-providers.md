@@ -627,20 +627,21 @@ All six adapters execute in the backend process and resolve provider data throug
 
 ##### Tasks
 
-- [ ] D1S2_T1 — All six adapters execute in the backend process and resolve provider data through the existing registries. (50 min)
+- [x] D1S2_T1 — All six adapters execute in the backend process and resolve provider data through the existing registries. (50 min) — 938c793b2
 <!-- plan:task-meta:{"writes":["backend/src/agent/adapters/","backend/src/agent/models/","backend/src/agent/decisions/","backend/src/agent/reasoning/","backend/data/","backend/test/tst_bts_ai_models_contract.test.ts","backend/test/tst_bts_ai_models_module.test.ts","backend/test/tst_bts_ai_local_catalog.test.ts","backend/test/tst_bts_ai_runtime_language.test.ts","backend/test/tst_bts_ai_runtime_embedding.test.ts","backend/test/tst_bts_ai_runtime_decision.test.ts"],"predictedActiveMinutes":50,"predictedCredits":5,"how":"Add RED admission cases for a missing adapter/reader and incompatible capabilities, plus native-result preservation in language, embedding and decision tests. Move implementations and protocol-specific reasoning/catalog translation to backend/src/agent/adapters using the compiler to resolve imports. Keep one AiProviderRegistrationService list and existing catalog reader registration; no extra registry or process. Load the D2-S1 generated metadata through the current model catalog/runtime-root owners, selecting an exact provider definition and saved connection. Replace curated source constants with the artifact; missing required data fails rather than using a second metadata copy. Preserve saved logical IDs, reasoning choices, local artifacts, cancellation, language stream metadata and full embedding results. Exercise local/native behavior with deterministic existing test doubles and no live provider calls.","red":"bun run agent:test:backend -- test/tst_bts_ai_models_module.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_ai_models_module.test.ts test/tst_bts_ai_local_catalog.test.ts` exits 0 — metadata admission preserves registry and local artifact behavior
-- [ ] `bun run agent:test:backend -- test/tst_bts_ai_runtime_language.test.ts test/tst_bts_ai_runtime_embedding.test.ts test/tst_bts_ai_runtime_decision.test.ts` exits 0 — native contracts and deterministic decision/refusal behavior survive the move
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_ai_models_module.test.ts test/tst_bts_ai_local_catalog.test.ts` exits 0 — metadata admission preserves registry and local artifact behavior — 938c793b267b5c9e1f2be0ee4f30c23c134152c9
+- [x] `bun run agent:test:backend -- test/tst_bts_ai_runtime_language.test.ts test/tst_bts_ai_runtime_embedding.test.ts test/tst_bts_ai_runtime_decision.test.ts` exits 0 — native contracts and deterministic decision/refusal behavior survive the move — 938c793b267b5c9e1f2be0ee4f30c23c134152c9
+- [x] Commit — 938c793b267b5c9e1f2be0ee4f30c23c134152c9
 
 ##### Results
 
 <!-- plan:results:D1-S2:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S2_T1 | 938c793b2 | 2026-11-14T09:22:31.719Z–2026-11-14T09:55:29.170Z | 32.95751666666666 / 32.95751666666666 min | unavailable: not measured by planctl | Moved all six first-party adapters and protocol discovery/reasoning implementations into agent/adapters; existing registration and runtime owners consume validated providers.json. Explicit and models.dev definitions preserve supported discovery; unavailable adapters/readers and invalid HTTP endpoints are refused, rejected refreshes preserve the admitted snapshot. Canonical fixtures prove language request/response metadata and embedding warnings/provider metadata. Backend typecheck/lint, 63 affected backend tests, 823 frontend tests and normal commit hooks pass. — beyond writes: backend/scripts/typesafe-decision-smoke.ts, backend/test/tst_bts_ai_models_control_plane.test.ts, backend/test/tst_bts_api_ctl_ai_models.test.ts, docs/backend/ai-models.md, packages/sdk/src/core/ai-model.ts, scripts/llm-call-sites-audit.sh |
 <!-- plan:results:D1-S2:end -->
 <!-- plan:stage:D1-S2:end -->
 
@@ -851,20 +852,21 @@ Provider files produce a metadata-only catalog document while two services share
 
 ##### Tasks
 
-- [ ] D2S1_T1 — Provider files produce a metadata-only catalog document while two services share one backend adapter. (45 min)
+- [x] D2S1_T1 — Provider files produce a metadata-only catalog document while two services share one backend adapter. (45 min) — 836d6c1a4818d820cf143a32f2a799c282cce078
 <!-- plan:task-meta:{"writes":["providers/","scripts/build-plugins.ts","scripts/build-catalog-index.ts","scripts/build-provider-catalog.ts","scripts/build-provider-catalog.test.ts","scripts/build-catalog-index.test.ts","packages/host-stubs/","packages/declare/","package.json","docs/"],"predictedActiveMinutes":45,"predictedCredits":5,"how":"Generate canonical declarations from the host task checkout with its existing scripts/gen-host-stubs.sh and this catalog checkout as the explicit argument; do not hand-maintain mirrored schemas. Add RED build cases for duplicate IDs, invalid declarations and references, and two provider definitions sharing openai-compatible while retaining distinct MP namespaces. Move curated provider descriptions and explicit model metadata into providers/*.toml; preserve current supported providers, native auth classifications and exact capability/reader associations. Keep models.dev metadata mapping explicit without guessing protocols or entitlement. Extend existing build-plugins/build-catalog-index owners to validate TOML with canonical SDK schemas and produce providers.json deterministically. The artifact contains only data, no secrets or executable adapter paths.","red":"bun run agent:test:backend -- scripts/build-provider-catalog.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — invalid data is refused and compatible definitions share an adapter without copied code
-- [ ] `bun run agent:build` exits 0 — the existing catalog build produces the validated provider data
-- [ ] Commit
+- [x] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — invalid data is refused and compatible definitions share an adapter without copied code — 836d6c1a4818d820cf143a32f2a799c282cce078
+- [x] `bun run agent:build` exits 0 — the existing catalog build produces the validated provider data — 836d6c1a4818d820cf143a32f2a799c282cce078
+- [x] Commit — 836d6c1a4818d820cf143a32f2a799c282cce078
 
 ##### Results
 
 <!-- plan:results:D2-S1:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D2S1_T1 | 836d6c1a4818d820cf143a32f2a799c282cce078 | 2026-11-14T08:48:56.277Z–2026-11-14T09:22:20.958Z | 33.41135 / 33.41135 min | unavailable: not measured by planctl | Added eight declarative provider definitions, canonical TOML-to-SDK metadata normalization and providers.json production through the existing plugin/catalog builds. RED missing-builder tests reproduced; 19 targeted metadata/catalog tests and the complete catalog typecheck pass. Normal hooks additionally pass 26 builder/ownership tests and scoped lint/typechecks. Data-only models reject saved-account bindings, mismatched adapters and undeclared readers. Canonical SDK validators are generated through the repaired selective export, with no copied schemas or unrelated API migration. |
 <!-- plan:results:D2-S1:end -->
 <!-- plan:stage:D2-S1:end -->
 
@@ -978,4 +980,48 @@ The catalog release includes the validated provider document and matches the fin
 - deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiLogicalModelAdminInfoSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
 
 - close D1-S1 closed commit:f40061ad61a29112f510f7a1d23ede21cd91d12c
+
+- record-result D2-S1 commit:836d6c1a4818d820cf143a32f2a799c282cce078
+
+- deviation D2-S1: The canonical export uses explicit SDK subpaths and their compiler-resolved dependencies because a full host export pulled unrelated Graph/layout APIs from a newer host baseline. Initial full-export changes and two temporary dependencies were restored; final package/lock dependencies remain unchanged. Necessary planctl runtime compatibility maintenance was committed separately with its checks enabled and scoped regression tests verified.
+
+- deviation D2-S1: Implementation type not listed in SPEC: EnumOption in packages/host-stubs/types/packages/sdk/core/module-settings.d.ts
+
+- deviation D2-S1: Implementation type not listed in SPEC: ModuleSettingFieldType in packages/host-stubs/types/packages/sdk/core/module-settings.d.ts
+
+- deviation D2-S1: Implementation type not listed in SPEC: ModuleSettingField in packages/host-stubs/types/packages/sdk/core/module-settings.d.ts
+
+- deviation D2-S1: Implementation type not listed in SPEC: ModuleSettingsSchema in packages/host-stubs/types/packages/sdk/core/module-settings.d.ts
+
+- deviation D2-S1: Implementation type not listed in SPEC: ModuleSettingValue in packages/host-stubs/types/packages/sdk/core/module-settings.d.ts
+
+- deviation D2-S1: Implementation type not listed in SPEC: ModuleSettingsEntry in packages/host-stubs/types/packages/sdk/core/module-settings.d.ts
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/ai-model.d.ts: AiProviderCatalogEntry needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/ai-model.d.ts: AiProviderCatalogDocument needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/module-settings.d.ts: EnumOption is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/module-settings.d.ts: ModuleSettingFieldType is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/module-settings.d.ts: ModuleSettingField is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/module-settings.d.ts: ModuleSettingsSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/module-settings.d.ts: ModuleSettingValue is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S1: packages/host-stubs/types/packages/sdk/core/module-settings.d.ts: ModuleSettingsEntry is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D2-S1 closed commit:836d6c1a4818d820cf143a32f2a799c282cce078
+
+- record-result D1-S2 commit:938c793b2
+
+- deviation D1-S2: Adapted resolved import callers, including smoke constructor/imports without executing smoke. Generated backend/data/providers.json through the catalog builder; preserve old prices and display names. Exact-path call-site audit follows relocated files; documentation anchors use the existing agent owner across the relocation.
+
+- deviation D1-S2: Role-narrowed existing dependency types allow real wrapper metadata fixtures without test-only casts. Canonical endpoint admission now requires HTTP(S) without embedded credentials.
+
+- deviation D1-S2: packages/sdk/src/core/ai-model.ts: AiProviderDescriptorSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S2 closed commit:938c793b267b5c9e1f2be0ee4f30c23c134152c9
 <!-- plan:execution:end -->

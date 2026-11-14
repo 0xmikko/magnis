@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { sourceConfigurationFromManifest } from "../packages/declare/configuration.ts";
 
 import { createHash } from "node:crypto";
 import {
@@ -717,6 +718,7 @@ export function discoverSourceReleaseManifests(
     if (certification.disposition !== "admissible") {
       throw new Error(`source '${id}' certification.disposition must be admissible or inadmissible`);
     }
+    sourceConfigurationFromManifest(parsed);
     releases.push({
       disposition: "admissible",
       id,

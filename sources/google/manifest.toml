@@ -93,3 +93,23 @@ name = "meetings"
 cursor_terminal_null = "retain"
 progress = { target = "full_snapshot", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "snapshot", live_fence = "none" }
 receiver_interface_hash = "sha256:ee62dc20e251dd38db87444858ca3dd1a1cd376af9a1cf8640684aa482984d2b"
+
+# The host seeds these deployment credentials; account login remains separate.
+[configuration]
+kind = "source"
+
+[[configuration.fields]]
+kind = "secret"
+key = "client_id"
+label = "Google OAuth client ID"
+required = true
+environment = true
+delivery = "extension"
+
+[[configuration.fields]]
+kind = "secret"
+key = "client_secret"
+label = "Google OAuth client secret"
+required = true
+environment = true
+delivery = "extension"

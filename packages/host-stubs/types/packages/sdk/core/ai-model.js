@@ -246,7 +246,12 @@ export const AiProviderDescriptorSchema = z.strictObject({
     displayName: z.string().min(1),
     adapterId: z.string().min(1),
     authKind: AiProviderAuthKindSchema,
-    endpoint: z.url().nullable(),
+    endpoint: z.url().refine((value) => {
+        if (!URL.canParse(value))
+            return false;
+        const endpoint = new URL(value);
+        return (endpoint.protocol === "http:" || endpoint.protocol === "https:") && endpoint.username === "" && endpoint.password === "";
+    }, "A provider endpoint must use HTTP(S) without embedded credentials").nullable(),
     requiresEndpoint: z.boolean(),
     configuration: ExtensionConfigurationDeclarationSchema.refine((declaration) => declaration.kind === "model-provider", "Provider configuration must belong to the provider"),
     catalogSourceIds: z.array(z.string().min(1)).readonly().refine((ids) => new Set(ids).size === ids.length, "Catalog reader IDs must be unique"),

@@ -39,6 +39,22 @@ export const ModuleSettingsSchemaSchema = z.strictObject({
 });
 const _schemaExact = true;
 void _schemaExact;
+/** TOML omits nullable properties; validation still uses the canonical field types. */
+const manifestNullableString = z.string().nullish().transform(value => value ?? null);
+export const ModuleSettingFieldManifestSchema = ModuleSettingFieldSchema.extend({
+    description: manifestNullableString,
+    confirmationMessage: manifestNullableString,
+    fieldType: z.union([
+        z.strictObject({ type: z.literal("enum"), options: z.array(EnumOptionSchema.extend({ description: manifestNullableString })) }),
+        z.strictObject({ type: z.literal("string"), maxLength: z.number().int().nonnegative().nullish().transform(value => value ?? null) }),
+        z.strictObject({ type: z.literal("number"), min: z.number().nullish().transform(value => value ?? null), max: z.number().nullish().transform(value => value ?? null), integer: z.boolean() }),
+        ModuleSettingFieldTypeSchema,
+    ]),
+}).pipe(ModuleSettingFieldSchema);
+export const ModuleSettingsManifestSchema = ModuleSettingsSchemaSchema.extend({
+    description: manifestNullableString,
+    fields: z.array(ModuleSettingFieldManifestSchema),
+}).transform(value => ModuleSettingsSchemaSchema.parse(value));
 export const ModuleSettingValueSchema = z.strictObject({
     key: z.string(),
     value: z.string(),

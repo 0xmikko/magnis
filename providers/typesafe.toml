@@ -34,7 +34,7 @@ delivery = "host_only"
 sourceId = "configured-provider"
 adapterId = "system-one"
 physicalModelId = "jev-1.13.0"
-displayName = "jev-1.13.0"
+displayName = "Jev 1.13.0"
 capability = "decision"
 dataBoundary = "cloud_allowed"
 
@@ -46,3 +46,7 @@ canUseProviderDefault = false
 [models.price]
 inputPerMtokMicros = 42000
 outputPerMtokMicros = 0
+cacheReadPerMtokMicros = 0
+cacheWritePerMtokMicros = 0
+cacheWriteOneHourPerMtokMicros = 0
+reasoningPerMtokMicros = 0

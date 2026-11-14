@@ -34,7 +34,7 @@ delivery = "host_only"
 sourceId = "configured-provider"
 adapterId = "openai"
 physicalModelId = "gpt-6-luna"
-displayName = "gpt-6-luna"
+displayName = "GPT-6 Luna"
 capability = "decision"
 dataBoundary = "cloud_allowed"
 
@@ -46,12 +46,16 @@ canUseProviderDefault = false
 [models.price]
 inputPerMtokMicros = 100000
 outputPerMtokMicros = 0
+cacheReadPerMtokMicros = 0
+cacheWritePerMtokMicros = 0
+cacheWriteOneHourPerMtokMicros = 0
+reasoningPerMtokMicros = 0
 
 [[models]]
 sourceId = "configured-provider"
 adapterId = "openai"
 physicalModelId = "text-embedding-3-small"
-displayName = "text-embedding-3-small"
+displayName = "OpenAI text-embedding-3-small"
 capability = "embedding"
 dataBoundary = "cloud_allowed"
 dimensions = 1536
@@ -70,7 +74,7 @@ outputPerMtokMicros = 0
 sourceId = "configured-provider"
 adapterId = "openai"
 physicalModelId = "text-embedding-3-large"
-displayName = "text-embedding-3-large"
+displayName = "OpenAI text-embedding-3-large"
 capability = "embedding"
 dataBoundary = "cloud_allowed"
 dimensions = 3072

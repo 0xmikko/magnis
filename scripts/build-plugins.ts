@@ -28,6 +28,8 @@ import { z } from "zod";
 
 import { buildProviderCatalog } from "./build-provider-catalog.ts";
 
+import { moduleConfigurationFromManifest } from "../packages/declare/configuration.ts";
+
 import { descriptorFrom } from "../packages/declare/derive.ts";
 
 const REPO_ROOT = join(import.meta.dir, "..");
@@ -188,6 +190,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
 
   const manifestPath = join(pluginsDir, "modules", pluginId, "manifest.toml");
   const manifest: Manifest = parseToml(readFileSync(manifestPath, "utf8"));
+  moduleConfigurationFromManifest(manifest);
   // Entry is convention (manifest v3): ui/index.tsx — the entry key matches
   // what the frontend loader requests (`/api/plugins/<id>/ui/index.tsx`). A
   // module without ui/ has no UI of its own, and no UI bundle is built.

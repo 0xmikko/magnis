@@ -159,6 +159,249 @@ export declare const ModuleSettingsSchemaSchema: z.ZodObject<{
         confirmationMessage: z.ZodNullable<z.ZodString>;
     }, z.core.$strict>>>;
 }, z.core.$strict>;
+export declare const ModuleSettingFieldManifestSchema: z.ZodPipe<z.ZodObject<{
+    key: z.ZodString;
+    label: z.ZodString;
+    defaultValue: z.ZodString;
+    description: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+    confirmationMessage: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+    fieldType: z.ZodUnion<readonly [z.ZodObject<{
+        type: z.ZodLiteral<"enum">;
+        options: z.ZodArray<z.ZodObject<{
+            value: z.ZodString;
+            label: z.ZodString;
+            description: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"string">;
+        maxLength: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodNumber>>, z.ZodTransform<number | null, number | null | undefined>>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"number">;
+        min: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodNumber>>, z.ZodTransform<number | null, number | null | undefined>>;
+        max: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodNumber>>, z.ZodTransform<number | null, number | null | undefined>>;
+        integer: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodDiscriminatedUnion<[z.ZodObject<{
+        type: z.ZodLiteral<"number">;
+        min: z.ZodNullable<z.ZodNumber>;
+        max: z.ZodNullable<z.ZodNumber>;
+        integer: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"string">;
+        maxLength: z.ZodNullable<z.ZodNumber>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"boolean">;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"enum">;
+        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            value: z.ZodString;
+            label: z.ZodString;
+            description: z.ZodNullable<z.ZodString>;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"model">;
+        capability: z.ZodEnum<{
+            language: "language";
+            embedding: "embedding";
+            decision: "decision";
+        }>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"moduleChoice">;
+        method: z.ZodString;
+    }, z.core.$strict>], "type">]>;
+}, z.core.$strict>, z.ZodObject<{
+    key: z.ZodString;
+    label: z.ZodString;
+    description: z.ZodNullable<z.ZodString>;
+    fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        type: z.ZodLiteral<"number">;
+        min: z.ZodNullable<z.ZodNumber>;
+        max: z.ZodNullable<z.ZodNumber>;
+        integer: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"string">;
+        maxLength: z.ZodNullable<z.ZodNumber>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"boolean">;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"enum">;
+        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            value: z.ZodString;
+            label: z.ZodString;
+            description: z.ZodNullable<z.ZodString>;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"model">;
+        capability: z.ZodEnum<{
+            language: "language";
+            embedding: "embedding";
+            decision: "decision";
+        }>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"moduleChoice">;
+        method: z.ZodString;
+    }, z.core.$strict>], "type">;
+    defaultValue: z.ZodString;
+    confirmationMessage: z.ZodNullable<z.ZodString>;
+}, z.core.$strict>>;
+export declare const ModuleSettingsManifestSchema: z.ZodPipe<z.ZodObject<{
+    moduleId: z.ZodString;
+    label: z.ZodString;
+    description: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+    fields: z.ZodArray<z.ZodPipe<z.ZodObject<{
+        key: z.ZodString;
+        label: z.ZodString;
+        defaultValue: z.ZodString;
+        description: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+        confirmationMessage: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+        fieldType: z.ZodUnion<readonly [z.ZodObject<{
+            type: z.ZodLiteral<"enum">;
+            options: z.ZodArray<z.ZodObject<{
+                value: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodString>>, z.ZodTransform<string | null, string | null | undefined>>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"string">;
+            maxLength: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodNumber>>, z.ZodTransform<number | null, number | null | undefined>>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"number">;
+            min: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodNumber>>, z.ZodTransform<number | null, number | null | undefined>>;
+            max: z.ZodPipe<z.ZodOptional<z.ZodNullable<z.ZodNumber>>, z.ZodTransform<number | null, number | null | undefined>>;
+            integer: z.ZodBoolean;
+        }, z.core.$strict>, z.ZodDiscriminatedUnion<[z.ZodObject<{
+            type: z.ZodLiteral<"number">;
+            min: z.ZodNullable<z.ZodNumber>;
+            max: z.ZodNullable<z.ZodNumber>;
+            integer: z.ZodBoolean;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"string">;
+            maxLength: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"boolean">;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"enum">;
+            options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                value: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+            }, z.core.$strict>>>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"model">;
+            capability: z.ZodEnum<{
+                language: "language";
+                embedding: "embedding";
+                decision: "decision";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"moduleChoice">;
+            method: z.ZodString;
+        }, z.core.$strict>], "type">]>;
+    }, z.core.$strict>, z.ZodObject<{
+        key: z.ZodString;
+        label: z.ZodString;
+        description: z.ZodNullable<z.ZodString>;
+        fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+            type: z.ZodLiteral<"number">;
+            min: z.ZodNullable<z.ZodNumber>;
+            max: z.ZodNullable<z.ZodNumber>;
+            integer: z.ZodBoolean;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"string">;
+            maxLength: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"boolean">;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"enum">;
+            options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                value: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+            }, z.core.$strict>>>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"model">;
+            capability: z.ZodEnum<{
+                language: "language";
+                embedding: "embedding";
+                decision: "decision";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"moduleChoice">;
+            method: z.ZodString;
+        }, z.core.$strict>], "type">;
+        defaultValue: z.ZodString;
+        confirmationMessage: z.ZodNullable<z.ZodString>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>, z.ZodTransform<{
+    moduleId: string;
+    label: string;
+    description: string | null;
+    fields: readonly {
+        key: string;
+        label: string;
+        description: string | null;
+        fieldType: {
+            type: "number";
+            min: number | null;
+            max: number | null;
+            integer: boolean;
+        } | {
+            type: "string";
+            maxLength: number | null;
+        } | {
+            type: "boolean";
+        } | {
+            type: "enum";
+            options: readonly {
+                value: string;
+                label: string;
+                description: string | null;
+            }[];
+        } | {
+            type: "model";
+            capability: "language" | "embedding" | "decision";
+        } | {
+            type: "moduleChoice";
+            method: string;
+        };
+        defaultValue: string;
+        confirmationMessage: string | null;
+    }[];
+}, {
+    moduleId: string;
+    label: string;
+    description: string | null;
+    fields: {
+        key: string;
+        label: string;
+        description: string | null;
+        fieldType: {
+            type: "number";
+            min: number | null;
+            max: number | null;
+            integer: boolean;
+        } | {
+            type: "string";
+            maxLength: number | null;
+        } | {
+            type: "boolean";
+        } | {
+            type: "enum";
+            options: readonly {
+                value: string;
+                label: string;
+                description: string | null;
+            }[];
+        } | {
+            type: "model";
+            capability: "language" | "embedding" | "decision";
+        } | {
+            type: "moduleChoice";
+            method: string;
+        };
+        defaultValue: string;
+        confirmationMessage: string | null;
+    }[];
+}>>;
 /** One setting's current value. */
 export interface ModuleSettingValue {
     key: string;

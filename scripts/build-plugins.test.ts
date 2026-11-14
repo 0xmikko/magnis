@@ -3,7 +3,8 @@
 // runtime (no jsxDEV / no vite dep paths). Run: `bun test scripts/`.
 import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin, discoverPlugins } from "./build-plugins.ts";
-import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync, mkdirSync, mkdtempSync } from "fs";
+import { tmpdir } from "node:os";
 import { join } from "path";
 import { parse as parseToml } from "smol-toml";
 
@@ -180,3 +181,34 @@ test("tst_build_styles_001: the bundle carries the package's own utilities, and 
   // worse than an unstyled one.
   expect(bundle).not.toContain("@layer base");
 });
+
+/**
+ * @test-id: tst_cat_configuration_001
+ * @scenario: scn_provider_declared_configuration
+ * @covers: scripts/build-plugins.ts::buildPlugin
+ * @deterministic: yes
+ * @fixtures: temporary module with an inadmissible secret setting
+ */
+test("tst_cat_configuration_001 a module cannot ship a secret setting", async () => {
+  const root = mkdtempSync(join(tmpdir(), "module-configuration-"));
+  const module = join(root, "modules", "private-settings");
+  mkdirSync(join(module, "module"), { recursive: true });
+  writeFileSync(join(module, "module", "index.ts"), "export {};\n");
+  writeFileSync(join(module, "manifest.toml"), `id = "private-settings"
+version = "1.0.0"
+[settings]
+moduleId = "private-settings"
+label = "Settings"
+[[settings.fields]]
+key = "key"
+label = "Secret"
+defaultValue = ""
+fieldType = { type = "secret" }
+`);
+  try {
+    await expect(buildPlugin("private-settings", { pluginsDir: root, distDir: join(root, "dist") })).rejects.toThrow();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+

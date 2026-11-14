@@ -67,3 +67,23 @@ name = "telegram"
 cursor_terminal_null = "retain"
 progress = { target = "per_identity_history", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "per_identity_range", live_fence = "subscription_ack" }
 receiver_interface_hash = "sha256:04cd915af1a9017a9becd9a3c947187cbdd8c1479d02e60cc6dbfa10d7b8359c"
+
+# The host seeds these deployment credentials; account login remains separate.
+[configuration]
+kind = "source"
+
+[[configuration.fields]]
+kind = "secret"
+key = "api_id"
+label = "Telegram API ID"
+required = true
+environment = true
+delivery = "extension"
+
+[[configuration.fields]]
+kind = "secret"
+key = "api_hash"
+label = "Telegram API hash"
+required = true
+environment = true
+delivery = "extension"

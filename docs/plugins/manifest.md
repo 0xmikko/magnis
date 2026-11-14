@@ -289,3 +289,28 @@ When a plugin is reinstalled, the host runs a **breaking-change check** against
 the previously installed manifest — a newly-required schema field or a narrowed
 type is rejected. Additive changes (new optional fields, new schemas, new
 capability entries) are safe. Bump `version` whenever you change schemas.
+
+## Declared environment configuration
+
+Modules keep their existing `[settings]` schema as the declaration for ordinary
+workspace preferences. The same field types and values power Settings and
+portable non-secret reads. Build admission rejects secret field types,
+`[credentials]`, and a second `[configuration]` in Modules. Do not put secrets
+in Module preferences. `[userSettings]` remains account-scoped and is not seeded
+from a deployment environment.
+
+Sources opt deployment credentials into `[configuration]`, with `kind = "source"`
+and canonical `[[configuration.fields]]` entries. Google declares `client_id`
+and `client_secret`; Telegram declares `api_id` and `api_hash`; Anysite declares
+its shared `api_key`. The host derives `SOURCE_<ID>_<FIELD>` from the admitted ID
+and field key. Packages cannot choose another prefix or read the environment file.
+Minted credentials and labeled per-account credentials cannot opt into deployment
+seeding. Installation, Source certification and existing per-call credential
+injection retain their account boundaries. Modules never receive those credentials.
+
+Catalog build validation and the host share the SDK configuration/setting schemas,
+including TOML normalization for omitted nullable descriptions. Provider files
+use the same declared fields with the `MP_<PROVIDER_ID>_<FIELD>` namespace.
+Environment inputs seed only unset persisted fields; Settings edits and explicit
+clears take priority across restart. The host owns persistence and encrypted
+Secrets; this catalog contains declarations, never environment values.
