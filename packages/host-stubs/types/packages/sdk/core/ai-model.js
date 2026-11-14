@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TokenBreakdownSchema } from "./token-breakdown.js";
+import { ExtensionConfigurationDeclarationSchema } from "./extension-configuration.js";
 /** Exact controls for one model and execution route. Missing metadata stays unknown. */
 export const ReasoningValuesSchema = z.strictObject({
     effort: z.string().min(1).optional(),
@@ -243,10 +244,12 @@ export const AiProviderProblemSchema = z.strictObject({
 export const AiProviderDescriptorSchema = z.strictObject({
     id: z.string().min(1),
     displayName: z.string().min(1),
-    adapterId: AiProviderAdapterIdSchema,
+    adapterId: z.string().min(1),
     authKind: AiProviderAuthKindSchema,
     endpoint: z.url().nullable(),
     requiresEndpoint: z.boolean(),
+    configuration: ExtensionConfigurationDeclarationSchema.refine((declaration) => declaration.kind === "model-provider", "Provider configuration must belong to the provider"),
+    catalogSourceIds: z.array(z.string().min(1)).readonly().refine((ids) => new Set(ids).size === ids.length, "Catalog reader IDs must be unique"),
 });
 export const AiSavedProviderSettingsSchema = z.strictObject({
     connection: AiProviderConnectionInfoSchema.extend({ adapterId: z.string().min(1) }).strict(),
@@ -291,20 +294,41 @@ export const AiProviderConfigurationOperationSchema = z.strictObject({
 export const AiCatalogCandidateInfoSchema = z.object({
     sourceId: z.string().min(1),
     providerConnectionId: z.string().min(1).nullable(),
-    adapterId: AiProviderAdapterIdSchema,
+    adapterId: z.string().min(1),
     physicalModelId: z.string().min(1),
     displayName: z.string().min(1),
     capability: z.enum(["language", "embedding", "decision"]),
     dataBoundary: z.enum(["device_only", "cloud_allowed"]),
     contextTokens: z.number().int().positive().nullable(),
     languageCapabilities: AiLanguageCapabilitiesSchema.nullable(),
-    reasoning: ReasoningCapabilitiesSchema.optional(),
+    reasoning: ReasoningCapabilitiesSchema,
     dimensions: z.number().int().positive().nullable(),
     normalization: z.enum(["none", "l2"]).nullable(),
     artifactDigest: z.string().min(1).nullable(),
-    price: AiPriceInfoSchema,
+    price: AiPriceInfoSchema.nullable(),
+});
+/** Metadata-only provider document; adapters are registered backend code. */
+export const AiProviderCatalogEntrySchema = z.strictObject({
+    provider: AiProviderDescriptorSchema,
+    models: z.array(AiCatalogCandidateInfoSchema.strict()).readonly(),
+}).superRefine((entry, context) => {
+    for (const [index, model] of entry.models.entries()) {
+        if (model.providerConnectionId !== null || model.adapterId !== entry.provider.adapterId
+            || !entry.provider.catalogSourceIds.includes(model.sourceId)) {
+            context.addIssue({ code: "custom", path: ["models", index], message: "Declared models must use their provider adapter and catalog readers without a saved connection" });
+        }
+    }
+});
+export const AiProviderCatalogDocumentSchema = z.strictObject({
+    schemaVersion: z.literal(1),
+    entries: z.array(AiProviderCatalogEntrySchema).readonly(),
+}).superRefine((document, context) => {
+    const ids = document.entries.map((entry) => entry.provider.id);
+    if (new Set(ids).size !== ids.length)
+        context.addIssue({ code: "custom", message: "Provider IDs must be unique" });
 });
 export const AiLogicalModelAdminInfoSchema = AiCatalogCandidateInfoSchema.omit({ sourceId: true }).extend({
+    reasoning: ReasoningCapabilitiesSchema.optional(),
     private: z.boolean(),
     price: AiPriceInfoSchema.nullable(),
     id: z.string().min(1),
@@ -362,3 +386,4 @@ export const OllamaModelPullSchema = z.strictObject({
     error: z.strictObject({ code: z.string().min(1), message: z.string().min(1) }).nullable(),
     createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 });
+//# sourceMappingURL=ai-model.js.map

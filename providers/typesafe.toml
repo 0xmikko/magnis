@@ -1,0 +1,48 @@
+id = "typesafe"
+displayName = "TypeSafe"
+adapterId = "system-one"
+authKind = "api_key"
+endpoint = "https://api.typesafe.ai/v1"
+requiresEndpoint = true
+catalogSourceIds = [ "configured-provider" ]
+
+[configuration]
+kind = "model-provider"
+
+[[configuration.fields]]
+kind = "setting"
+required = true
+environment = true
+
+[configuration.fields.field]
+key = "BASE_URL"
+label = "API address"
+defaultValue = ""
+
+[configuration.fields.field.fieldType]
+type = "string"
+
+[[configuration.fields]]
+kind = "secret"
+key = "API_KEY"
+label = "API key"
+required = true
+environment = true
+delivery = "host_only"
+
+[[models]]
+sourceId = "configured-provider"
+adapterId = "system-one"
+physicalModelId = "jev-1.13.0"
+displayName = "jev-1.13.0"
+capability = "decision"
+dataBoundary = "cloud_allowed"
+
+[models.reasoning]
+state = "none"
+revision = "curated:2026-10-08"
+canUseProviderDefault = false
+
+[models.price]
+inputPerMtokMicros = 42000
+outputPerMtokMicros = 0

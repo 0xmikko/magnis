@@ -386,14 +386,7 @@ export type AiProviderProblem = z.output<typeof AiProviderProblemSchema>;
 export declare const AiProviderDescriptorSchema: z.ZodObject<{
     id: z.ZodString;
     displayName: z.ZodString;
-    adapterId: z.ZodEnum<{
-        anthropic: "anthropic";
-        openai: "openai";
-        "openai-compatible": "openai-compatible";
-        ollama: "ollama";
-        "local-fastembed": "local-fastembed";
-        "system-one": "system-one";
-    }>;
+    adapterId: z.ZodString;
     authKind: z.ZodEnum<{
         none: "none";
         api_key: "api_key";
@@ -401,6 +394,106 @@ export declare const AiProviderDescriptorSchema: z.ZodObject<{
     }>;
     endpoint: z.ZodNullable<z.ZodURL>;
     requiresEndpoint: z.ZodBoolean;
+    configuration: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"module">;
+        schema: z.ZodObject<{
+            moduleId: z.ZodString;
+            label: z.ZodString;
+            description: z.ZodNullable<z.ZodString>;
+            fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                key: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+                fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                    type: z.ZodLiteral<"number">;
+                    min: z.ZodNullable<z.ZodNumber>;
+                    max: z.ZodNullable<z.ZodNumber>;
+                    integer: z.ZodBoolean;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"string">;
+                    maxLength: z.ZodNullable<z.ZodNumber>;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"boolean">;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"enum">;
+                    options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                        value: z.ZodString;
+                        label: z.ZodString;
+                        description: z.ZodNullable<z.ZodString>;
+                    }, z.core.$strict>>>;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"model">;
+                    capability: z.ZodEnum<{
+                        language: "language";
+                        embedding: "embedding";
+                        decision: "decision";
+                    }>;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"moduleChoice">;
+                    method: z.ZodString;
+                }, z.core.$strict>], "type">;
+                defaultValue: z.ZodString;
+                confirmationMessage: z.ZodNullable<z.ZodString>;
+            }, z.core.$strict>>>;
+        }, z.core.$strict>;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodEnum<{
+            source: "source";
+            "model-provider": "model-provider";
+        }>;
+        fields: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+            kind: z.ZodLiteral<"setting">;
+            field: z.ZodObject<{
+                key: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+                fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                    type: z.ZodLiteral<"number">;
+                    min: z.ZodNullable<z.ZodNumber>;
+                    max: z.ZodNullable<z.ZodNumber>;
+                    integer: z.ZodBoolean;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"string">;
+                    maxLength: z.ZodNullable<z.ZodNumber>;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"boolean">;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"enum">;
+                    options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                        value: z.ZodString;
+                        label: z.ZodString;
+                        description: z.ZodNullable<z.ZodString>;
+                    }, z.core.$strict>>>;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"model">;
+                    capability: z.ZodEnum<{
+                        language: "language";
+                        embedding: "embedding";
+                        decision: "decision";
+                    }>;
+                }, z.core.$strict>, z.ZodObject<{
+                    type: z.ZodLiteral<"moduleChoice">;
+                    method: z.ZodString;
+                }, z.core.$strict>], "type">;
+                defaultValue: z.ZodString;
+                confirmationMessage: z.ZodNullable<z.ZodString>;
+            }, z.core.$strict>;
+            required: z.ZodBoolean;
+            environment: z.ZodBoolean;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"secret">;
+            key: z.ZodString;
+            label: z.ZodString;
+            description: z.ZodNullable<z.ZodString>;
+            required: z.ZodBoolean;
+            environment: z.ZodBoolean;
+            delivery: z.ZodEnum<{
+                host_only: "host_only";
+                extension: "extension";
+            }>;
+        }, z.core.$strict>], "kind">>>;
+    }, z.core.$strict>], "kind">;
+    catalogSourceIds: z.ZodReadonly<z.ZodArray<z.ZodString>>;
 }, z.core.$strict>;
 export type AiProviderDescriptor = z.output<typeof AiProviderDescriptorSchema>;
 export declare const AiSavedProviderSettingsSchema: z.ZodObject<{
@@ -488,14 +581,7 @@ export declare const AiProviderSettingsSnapshotSchema: z.ZodObject<{
     catalog: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         displayName: z.ZodString;
-        adapterId: z.ZodEnum<{
-            anthropic: "anthropic";
-            openai: "openai";
-            "openai-compatible": "openai-compatible";
-            ollama: "ollama";
-            "local-fastembed": "local-fastembed";
-            "system-one": "system-one";
-        }>;
+        adapterId: z.ZodString;
         authKind: z.ZodEnum<{
             none: "none";
             api_key: "api_key";
@@ -503,6 +589,106 @@ export declare const AiProviderSettingsSnapshotSchema: z.ZodObject<{
         }>;
         endpoint: z.ZodNullable<z.ZodURL>;
         requiresEndpoint: z.ZodBoolean;
+        configuration: z.ZodDiscriminatedUnion<[z.ZodObject<{
+            kind: z.ZodLiteral<"module">;
+            schema: z.ZodObject<{
+                moduleId: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+                fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                    key: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                    fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                        type: z.ZodLiteral<"number">;
+                        min: z.ZodNullable<z.ZodNumber>;
+                        max: z.ZodNullable<z.ZodNumber>;
+                        integer: z.ZodBoolean;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"string">;
+                        maxLength: z.ZodNullable<z.ZodNumber>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"boolean">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"enum">;
+                        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                            value: z.ZodString;
+                            label: z.ZodString;
+                            description: z.ZodNullable<z.ZodString>;
+                        }, z.core.$strict>>>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"model">;
+                        capability: z.ZodEnum<{
+                            language: "language";
+                            embedding: "embedding";
+                            decision: "decision";
+                        }>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"moduleChoice">;
+                        method: z.ZodString;
+                    }, z.core.$strict>], "type">;
+                    defaultValue: z.ZodString;
+                    confirmationMessage: z.ZodNullable<z.ZodString>;
+                }, z.core.$strict>>>;
+            }, z.core.$strict>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodEnum<{
+                source: "source";
+                "model-provider": "model-provider";
+            }>;
+            fields: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"setting">;
+                field: z.ZodObject<{
+                    key: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                    fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                        type: z.ZodLiteral<"number">;
+                        min: z.ZodNullable<z.ZodNumber>;
+                        max: z.ZodNullable<z.ZodNumber>;
+                        integer: z.ZodBoolean;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"string">;
+                        maxLength: z.ZodNullable<z.ZodNumber>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"boolean">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"enum">;
+                        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                            value: z.ZodString;
+                            label: z.ZodString;
+                            description: z.ZodNullable<z.ZodString>;
+                        }, z.core.$strict>>>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"model">;
+                        capability: z.ZodEnum<{
+                            language: "language";
+                            embedding: "embedding";
+                            decision: "decision";
+                        }>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"moduleChoice">;
+                        method: z.ZodString;
+                    }, z.core.$strict>], "type">;
+                    defaultValue: z.ZodString;
+                    confirmationMessage: z.ZodNullable<z.ZodString>;
+                }, z.core.$strict>;
+                required: z.ZodBoolean;
+                environment: z.ZodBoolean;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"secret">;
+                key: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+                required: z.ZodBoolean;
+                environment: z.ZodBoolean;
+                delivery: z.ZodEnum<{
+                    host_only: "host_only";
+                    extension: "extension";
+                }>;
+            }, z.core.$strict>], "kind">>>;
+        }, z.core.$strict>], "kind">;
+        catalogSourceIds: z.ZodReadonly<z.ZodArray<z.ZodString>>;
     }, z.core.$strict>>;
 }, z.core.$strict>;
 export type AiProviderSettingsSnapshot = z.output<typeof AiProviderSettingsSnapshotSchema>;
@@ -521,14 +707,7 @@ export type AiProviderConfigurationOperation = z.output<typeof AiProviderConfigu
 export declare const AiCatalogCandidateInfoSchema: z.ZodObject<{
     sourceId: z.ZodString;
     providerConnectionId: z.ZodNullable<z.ZodString>;
-    adapterId: z.ZodEnum<{
-        anthropic: "anthropic";
-        openai: "openai";
-        "openai-compatible": "openai-compatible";
-        ollama: "ollama";
-        "local-fastembed": "local-fastembed";
-        "system-one": "system-one";
-    }>;
+    adapterId: z.ZodString;
     physicalModelId: z.ZodString;
     displayName: z.ZodString;
     capability: z.ZodEnum<{
@@ -547,7 +726,7 @@ export declare const AiCatalogCandidateInfoSchema: z.ZodObject<{
         reasoning: z.ZodBoolean;
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
-    reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
+    reasoning: z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
         canUseProviderDefault: z.ZodBoolean;
@@ -585,63 +764,410 @@ export declare const AiCatalogCandidateInfoSchema: z.ZodObject<{
         }, z.core.$strict>>;
         revision: z.ZodString;
         canUseProviderDefault: z.ZodBoolean;
-    }, z.core.$strict>], "state">>;
+    }, z.core.$strict>], "state">;
     dimensions: z.ZodNullable<z.ZodNumber>;
     normalization: z.ZodNullable<z.ZodEnum<{
         none: "none";
         l2: "l2";
     }>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
-    price: z.ZodObject<{
+    price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
         outputPerMtokMicros: z.ZodNumber;
         cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
         cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
         cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
         reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
-    }, z.core.$strip>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 export type AiCatalogCandidateInfo = z.output<typeof AiCatalogCandidateInfoSchema>;
-export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
-    reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        state: z.ZodLiteral<"none">;
-        revision: z.ZodString;
-        canUseProviderDefault: z.ZodBoolean;
-    }, z.core.$strict>, z.ZodObject<{
-        state: z.ZodLiteral<"unknown">;
-        reason: z.ZodEnum<{
-            metadata_unavailable: "metadata_unavailable";
-            unverified_model: "unverified_model";
-            adapter_not_supported: "adapter_not_supported";
+/** Metadata-only provider document; adapters are registered backend code. */
+export declare const AiProviderCatalogEntrySchema: z.ZodObject<{
+    provider: z.ZodObject<{
+        id: z.ZodString;
+        displayName: z.ZodString;
+        adapterId: z.ZodString;
+        authKind: z.ZodEnum<{
+            none: "none";
+            api_key: "api_key";
+            native: "native";
         }>;
-        revision: z.ZodString;
-        canUseProviderDefault: z.ZodBoolean;
-    }, z.core.$strict>, z.ZodObject<{
-        state: z.ZodLiteral<"ready">;
-        controls: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-            kind: z.ZodLiteral<"effort">;
-            options: z.ZodArray<z.ZodObject<{
-                id: z.ZodString;
+        endpoint: z.ZodNullable<z.ZodURL>;
+        requiresEndpoint: z.ZodBoolean;
+        configuration: z.ZodDiscriminatedUnion<[z.ZodObject<{
+            kind: z.ZodLiteral<"module">;
+            schema: z.ZodObject<{
+                moduleId: z.ZodString;
                 label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+                fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                    key: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                    fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                        type: z.ZodLiteral<"number">;
+                        min: z.ZodNullable<z.ZodNumber>;
+                        max: z.ZodNullable<z.ZodNumber>;
+                        integer: z.ZodBoolean;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"string">;
+                        maxLength: z.ZodNullable<z.ZodNumber>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"boolean">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"enum">;
+                        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                            value: z.ZodString;
+                            label: z.ZodString;
+                            description: z.ZodNullable<z.ZodString>;
+                        }, z.core.$strict>>>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"model">;
+                        capability: z.ZodEnum<{
+                            language: "language";
+                            embedding: "embedding";
+                            decision: "decision";
+                        }>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"moduleChoice">;
+                        method: z.ZodString;
+                    }, z.core.$strict>], "type">;
+                    defaultValue: z.ZodString;
+                    confirmationMessage: z.ZodNullable<z.ZodString>;
+                }, z.core.$strict>>>;
+            }, z.core.$strict>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodEnum<{
+                source: "source";
+                "model-provider": "model-provider";
+            }>;
+            fields: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"setting">;
+                field: z.ZodObject<{
+                    key: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                    fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                        type: z.ZodLiteral<"number">;
+                        min: z.ZodNullable<z.ZodNumber>;
+                        max: z.ZodNullable<z.ZodNumber>;
+                        integer: z.ZodBoolean;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"string">;
+                        maxLength: z.ZodNullable<z.ZodNumber>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"boolean">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"enum">;
+                        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                            value: z.ZodString;
+                            label: z.ZodString;
+                            description: z.ZodNullable<z.ZodString>;
+                        }, z.core.$strict>>>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"model">;
+                        capability: z.ZodEnum<{
+                            language: "language";
+                            embedding: "embedding";
+                            decision: "decision";
+                        }>;
+                    }, z.core.$strict>, z.ZodObject<{
+                        type: z.ZodLiteral<"moduleChoice">;
+                        method: z.ZodString;
+                    }, z.core.$strict>], "type">;
+                    defaultValue: z.ZodString;
+                    confirmationMessage: z.ZodNullable<z.ZodString>;
+                }, z.core.$strict>;
+                required: z.ZodBoolean;
+                environment: z.ZodBoolean;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"secret">;
+                key: z.ZodString;
+                label: z.ZodString;
+                description: z.ZodNullable<z.ZodString>;
+                required: z.ZodBoolean;
+                environment: z.ZodBoolean;
+                delivery: z.ZodEnum<{
+                    host_only: "host_only";
+                    extension: "extension";
+                }>;
+            }, z.core.$strict>], "kind">>>;
+        }, z.core.$strict>], "kind">;
+        catalogSourceIds: z.ZodReadonly<z.ZodArray<z.ZodString>>;
+    }, z.core.$strict>;
+    models: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        sourceId: z.ZodString;
+        providerConnectionId: z.ZodNullable<z.ZodString>;
+        adapterId: z.ZodString;
+        physicalModelId: z.ZodString;
+        displayName: z.ZodString;
+        capability: z.ZodEnum<{
+            language: "language";
+            embedding: "embedding";
+            decision: "decision";
+        }>;
+        dataBoundary: z.ZodEnum<{
+            device_only: "device_only";
+            cloud_allowed: "cloud_allowed";
+        }>;
+        contextTokens: z.ZodNullable<z.ZodNumber>;
+        languageCapabilities: z.ZodNullable<z.ZodObject<{
+            tools: z.ZodBoolean;
+            vision: z.ZodBoolean;
+            reasoning: z.ZodBoolean;
+            structuredOutput: z.ZodBoolean;
+        }, z.core.$strip>>;
+        reasoning: z.ZodDiscriminatedUnion<[z.ZodObject<{
+            state: z.ZodLiteral<"none">;
+            revision: z.ZodString;
+            canUseProviderDefault: z.ZodBoolean;
+        }, z.core.$strict>, z.ZodObject<{
+            state: z.ZodLiteral<"unknown">;
+            reason: z.ZodEnum<{
+                metadata_unavailable: "metadata_unavailable";
+                unverified_model: "unverified_model";
+                adapter_not_supported: "adapter_not_supported";
+            }>;
+            revision: z.ZodString;
+            canUseProviderDefault: z.ZodBoolean;
+        }, z.core.$strict>, z.ZodObject<{
+            state: z.ZodLiteral<"ready">;
+            controls: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"effort">;
+                options: z.ZodArray<z.ZodObject<{
+                    id: z.ZodString;
+                    label: z.ZodString;
+                }, z.core.$strict>>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"thinking">;
+                options: z.ZodArray<z.ZodBoolean>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"budget">;
+                unit: z.ZodLiteral<"tokens">;
+                min: z.ZodNumber;
+                max: z.ZodNumber;
+                step: z.ZodNumber;
+            }, z.core.$strict>], "kind">>;
+            defaultValues: z.ZodNullable<z.ZodObject<{
+                effort: z.ZodOptional<z.ZodString>;
+                thinking: z.ZodOptional<z.ZodBoolean>;
+                budgetTokens: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strict>>;
-        }, z.core.$strict>, z.ZodObject<{
-            kind: z.ZodLiteral<"thinking">;
-            options: z.ZodArray<z.ZodBoolean>;
-        }, z.core.$strict>, z.ZodObject<{
-            kind: z.ZodLiteral<"budget">;
-            unit: z.ZodLiteral<"tokens">;
-            min: z.ZodNumber;
-            max: z.ZodNumber;
-            step: z.ZodNumber;
-        }, z.core.$strict>], "kind">>;
-        defaultValues: z.ZodNullable<z.ZodObject<{
-            effort: z.ZodOptional<z.ZodString>;
-            thinking: z.ZodOptional<z.ZodBoolean>;
-            budgetTokens: z.ZodOptional<z.ZodNumber>;
-        }, z.core.$strict>>;
-        revision: z.ZodString;
-        canUseProviderDefault: z.ZodBoolean;
-    }, z.core.$strict>], "state">>;
+            revision: z.ZodString;
+            canUseProviderDefault: z.ZodBoolean;
+        }, z.core.$strict>], "state">;
+        dimensions: z.ZodNullable<z.ZodNumber>;
+        normalization: z.ZodNullable<z.ZodEnum<{
+            none: "none";
+            l2: "l2";
+        }>>;
+        artifactDigest: z.ZodNullable<z.ZodString>;
+        price: z.ZodNullable<z.ZodObject<{
+            inputPerMtokMicros: z.ZodNumber;
+            outputPerMtokMicros: z.ZodNumber;
+            cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strip>>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type AiProviderCatalogEntry = z.output<typeof AiProviderCatalogEntrySchema>;
+export declare const AiProviderCatalogDocumentSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    entries: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        provider: z.ZodObject<{
+            id: z.ZodString;
+            displayName: z.ZodString;
+            adapterId: z.ZodString;
+            authKind: z.ZodEnum<{
+                none: "none";
+                api_key: "api_key";
+                native: "native";
+            }>;
+            endpoint: z.ZodNullable<z.ZodURL>;
+            requiresEndpoint: z.ZodBoolean;
+            configuration: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"module">;
+                schema: z.ZodObject<{
+                    moduleId: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                    fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                        key: z.ZodString;
+                        label: z.ZodString;
+                        description: z.ZodNullable<z.ZodString>;
+                        fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                            type: z.ZodLiteral<"number">;
+                            min: z.ZodNullable<z.ZodNumber>;
+                            max: z.ZodNullable<z.ZodNumber>;
+                            integer: z.ZodBoolean;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"string">;
+                            maxLength: z.ZodNullable<z.ZodNumber>;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"boolean">;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"enum">;
+                            options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                                value: z.ZodString;
+                                label: z.ZodString;
+                                description: z.ZodNullable<z.ZodString>;
+                            }, z.core.$strict>>>;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"model">;
+                            capability: z.ZodEnum<{
+                                language: "language";
+                                embedding: "embedding";
+                                decision: "decision";
+                            }>;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"moduleChoice">;
+                            method: z.ZodString;
+                        }, z.core.$strict>], "type">;
+                        defaultValue: z.ZodString;
+                        confirmationMessage: z.ZodNullable<z.ZodString>;
+                    }, z.core.$strict>>>;
+                }, z.core.$strict>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodEnum<{
+                    source: "source";
+                    "model-provider": "model-provider";
+                }>;
+                fields: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                    kind: z.ZodLiteral<"setting">;
+                    field: z.ZodObject<{
+                        key: z.ZodString;
+                        label: z.ZodString;
+                        description: z.ZodNullable<z.ZodString>;
+                        fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                            type: z.ZodLiteral<"number">;
+                            min: z.ZodNullable<z.ZodNumber>;
+                            max: z.ZodNullable<z.ZodNumber>;
+                            integer: z.ZodBoolean;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"string">;
+                            maxLength: z.ZodNullable<z.ZodNumber>;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"boolean">;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"enum">;
+                            options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                                value: z.ZodString;
+                                label: z.ZodString;
+                                description: z.ZodNullable<z.ZodString>;
+                            }, z.core.$strict>>>;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"model">;
+                            capability: z.ZodEnum<{
+                                language: "language";
+                                embedding: "embedding";
+                                decision: "decision";
+                            }>;
+                        }, z.core.$strict>, z.ZodObject<{
+                            type: z.ZodLiteral<"moduleChoice">;
+                            method: z.ZodString;
+                        }, z.core.$strict>], "type">;
+                        defaultValue: z.ZodString;
+                        confirmationMessage: z.ZodNullable<z.ZodString>;
+                    }, z.core.$strict>;
+                    required: z.ZodBoolean;
+                    environment: z.ZodBoolean;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"secret">;
+                    key: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                    required: z.ZodBoolean;
+                    environment: z.ZodBoolean;
+                    delivery: z.ZodEnum<{
+                        host_only: "host_only";
+                        extension: "extension";
+                    }>;
+                }, z.core.$strict>], "kind">>>;
+            }, z.core.$strict>], "kind">;
+            catalogSourceIds: z.ZodReadonly<z.ZodArray<z.ZodString>>;
+        }, z.core.$strict>;
+        models: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            sourceId: z.ZodString;
+            providerConnectionId: z.ZodNullable<z.ZodString>;
+            adapterId: z.ZodString;
+            physicalModelId: z.ZodString;
+            displayName: z.ZodString;
+            capability: z.ZodEnum<{
+                language: "language";
+                embedding: "embedding";
+                decision: "decision";
+            }>;
+            dataBoundary: z.ZodEnum<{
+                device_only: "device_only";
+                cloud_allowed: "cloud_allowed";
+            }>;
+            contextTokens: z.ZodNullable<z.ZodNumber>;
+            languageCapabilities: z.ZodNullable<z.ZodObject<{
+                tools: z.ZodBoolean;
+                vision: z.ZodBoolean;
+                reasoning: z.ZodBoolean;
+                structuredOutput: z.ZodBoolean;
+            }, z.core.$strip>>;
+            reasoning: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                state: z.ZodLiteral<"none">;
+                revision: z.ZodString;
+                canUseProviderDefault: z.ZodBoolean;
+            }, z.core.$strict>, z.ZodObject<{
+                state: z.ZodLiteral<"unknown">;
+                reason: z.ZodEnum<{
+                    metadata_unavailable: "metadata_unavailable";
+                    unverified_model: "unverified_model";
+                    adapter_not_supported: "adapter_not_supported";
+                }>;
+                revision: z.ZodString;
+                canUseProviderDefault: z.ZodBoolean;
+            }, z.core.$strict>, z.ZodObject<{
+                state: z.ZodLiteral<"ready">;
+                controls: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                    kind: z.ZodLiteral<"effort">;
+                    options: z.ZodArray<z.ZodObject<{
+                        id: z.ZodString;
+                        label: z.ZodString;
+                    }, z.core.$strict>>;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"thinking">;
+                    options: z.ZodArray<z.ZodBoolean>;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"budget">;
+                    unit: z.ZodLiteral<"tokens">;
+                    min: z.ZodNumber;
+                    max: z.ZodNumber;
+                    step: z.ZodNumber;
+                }, z.core.$strict>], "kind">>;
+                defaultValues: z.ZodNullable<z.ZodObject<{
+                    effort: z.ZodOptional<z.ZodString>;
+                    thinking: z.ZodOptional<z.ZodBoolean>;
+                    budgetTokens: z.ZodOptional<z.ZodNumber>;
+                }, z.core.$strict>>;
+                revision: z.ZodString;
+                canUseProviderDefault: z.ZodBoolean;
+            }, z.core.$strict>], "state">;
+            dimensions: z.ZodNullable<z.ZodNumber>;
+            normalization: z.ZodNullable<z.ZodEnum<{
+                none: "none";
+                l2: "l2";
+            }>>;
+            artifactDigest: z.ZodNullable<z.ZodString>;
+            price: z.ZodNullable<z.ZodObject<{
+                inputPerMtokMicros: z.ZodNumber;
+                outputPerMtokMicros: z.ZodNumber;
+                cacheReadPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+                cacheWritePerMtokMicros: z.ZodNullable<z.ZodNumber>;
+                cacheWriteOneHourPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+                reasoningPerMtokMicros: z.ZodNullable<z.ZodNumber>;
+            }, z.core.$strip>>;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type AiProviderCatalogDocument = z.output<typeof AiProviderCatalogDocumentSchema>;
+export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
     capability: z.ZodEnum<{
         language: "language";
         embedding: "embedding";
@@ -659,14 +1185,7 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
         none: "none";
         l2: "l2";
     }>>;
-    adapterId: z.ZodEnum<{
-        anthropic: "anthropic";
-        openai: "openai";
-        "openai-compatible": "openai-compatible";
-        ollama: "ollama";
-        "local-fastembed": "local-fastembed";
-        "system-one": "system-one";
-    }>;
+    adapterId: z.ZodString;
     physicalModelId: z.ZodString;
     languageCapabilities: z.ZodNullable<z.ZodObject<{
         tools: z.ZodBoolean;
@@ -675,6 +1194,45 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
         structuredOutput: z.ZodBoolean;
     }, z.core.$strip>>;
     artifactDigest: z.ZodNullable<z.ZodString>;
+    reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        state: z.ZodLiteral<"none">;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"unknown">;
+        reason: z.ZodEnum<{
+            metadata_unavailable: "metadata_unavailable";
+            unverified_model: "unverified_model";
+            adapter_not_supported: "adapter_not_supported";
+        }>;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"ready">;
+        controls: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+            kind: z.ZodLiteral<"effort">;
+            options: z.ZodArray<z.ZodObject<{
+                id: z.ZodString;
+                label: z.ZodString;
+            }, z.core.$strict>>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"thinking">;
+            options: z.ZodArray<z.ZodBoolean>;
+        }, z.core.$strict>, z.ZodObject<{
+            kind: z.ZodLiteral<"budget">;
+            unit: z.ZodLiteral<"tokens">;
+            min: z.ZodNumber;
+            max: z.ZodNumber;
+            step: z.ZodNumber;
+        }, z.core.$strict>], "kind">>;
+        defaultValues: z.ZodNullable<z.ZodObject<{
+            effort: z.ZodOptional<z.ZodString>;
+            thinking: z.ZodOptional<z.ZodBoolean>;
+            budgetTokens: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strict>>;
+        revision: z.ZodString;
+        canUseProviderDefault: z.ZodBoolean;
+    }, z.core.$strict>], "state">>;
     private: z.ZodBoolean;
     price: z.ZodNullable<z.ZodObject<{
         inputPerMtokMicros: z.ZodNumber;
@@ -717,8 +1275,8 @@ export declare const AiCallAccountingSchema: z.ZodObject<{
     totalTokens: z.ZodNumber;
     costMicros: z.ZodNumber;
     status: z.ZodEnum<{
-        failed: "failed";
         complete: "complete";
+        failed: "failed";
         aborted: "aborted";
     }>;
 }, z.core.$strip>;
@@ -829,7 +1387,6 @@ export declare const OllamaModelPullSchema: z.ZodObject<{
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
-        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -837,6 +1394,7 @@ export declare const OllamaModelPullSchema: z.ZodObject<{
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
+        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;

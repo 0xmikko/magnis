@@ -1,0 +1,31 @@
+id = "openai-compatible"
+displayName = "OpenAI-compatible"
+adapterId = "openai-compatible"
+authKind = "api_key"
+requiresEndpoint = true
+catalogSourceIds = [ "configured-provider" ]
+models = []
+
+[configuration]
+kind = "model-provider"
+
+[[configuration.fields]]
+kind = "setting"
+required = true
+environment = true
+
+[configuration.fields.field]
+key = "BASE_URL"
+label = "API address"
+defaultValue = ""
+
+[configuration.fields.field.fieldType]
+type = "string"
+
+[[configuration.fields]]
+kind = "secret"
+key = "API_KEY"
+label = "API key"
+required = false
+environment = true
+delivery = "host_only"

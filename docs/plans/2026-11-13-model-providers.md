@@ -595,14 +595,14 @@ Provider metadata declares its executable adapter, catalog readers and scoped fi
 
 ##### Tasks
 
-- [x] D1S1_T1 — Provider metadata declares its executable adapter, catalog readers and scoped fields through one canonical SDK schema. (55 min) — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
+- [x] D1S1_T1 — Provider metadata declares its executable adapter, catalog readers and scoped fields through one canonical SDK schema. (55 min) — f40061ad61a29112f510f7a1d23ede21cd91d12c
 <!-- plan:task-meta:{"writes":["packages/sdk/src/core/ai-model.ts","packages/sdk/src/core/extension-configuration.ts","packages/sdk/src/core/module-settings.ts","packages/sdk/src/core/source.ts","packages/sdk/src/core/plugin.ts","packages/sdk/src/index.ts","packages/sdk/package.json","packages/sdk/test/","backend/src/agent/models/","backend/src/core/ai-model.ts","backend/src/core/plugin.ts","backend/src/services/modules/","backend/src/services/sources/","backend/test/tst_bts_ai_models_contract.test.ts","backend/test/tst_bts_module_settings_pure.test.ts","scripts/gen-host-stubs.sh"],"predictedActiveMinutes":55,"predictedCredits":6,"how":"Add RED schema cases for a shared adapter with distinct provider identities, invalid metadata/capability declarations and ordinary Module fields rejecting secrets. Extend AiProviderDescriptor and AiCatalogCandidate and introduce the approved ExtensionConfigurationDeclaration through existing SDK schemas. Retain executable AiProviderAdapter and native SDK models in their existing backend owner. Reuse ModuleSettingField and existing Source credential declarations; preserve plugin wire envelopes and existing manifests while admitting explicit environment metadata. Update necessary descriptor/model callers and test fixtures together so this commit typechecks. Expose schema exports through the SDK's existing distribution and gen-host-stubs path. Metadata generation must consume executable SDK validators at build time; backend runtime never imports host-stubs.","red":"bun run agent:test:backend -- test/tst_bts_ai_models_contract.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:test:backend -- test/tst_bts_ai_models_contract.test.ts test/tst_bts_module_settings_pure.test.ts` exits 0 — canonical schemas validate provider IDs, reader references and ordinary Module fields — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
-- [x] `bun run agent:build:sdk` exits 0 — the canonical SDK builds with matching declarations — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
-- [x] Commit — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
+- [x] `bun run agent:test:backend -- test/tst_bts_ai_models_contract.test.ts test/tst_bts_module_settings_pure.test.ts` exits 0 — canonical schemas validate provider IDs, reader references and ordinary Module fields — f40061ad61a29112f510f7a1d23ede21cd91d12c
+- [x] `bun run agent:build:sdk` exits 0 — the canonical SDK builds with matching declarations — f40061ad61a29112f510f7a1d23ede21cd91d12c
+- [x] Commit — f40061ad61a29112f510f7a1d23ede21cd91d12c
 
 ##### Results
 
@@ -610,6 +610,7 @@ Provider metadata declares its executable adapter, catalog readers and scoped fi
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
 | D1S1_T1 | dc834c6f7d3672ead4c2afdd6d4be557d439c73d | 2026-11-14T08:35:21.877Z–2026-11-14T08:48:36.973Z | 13.2516 / 13.2516 min | unavailable: not measured by planctl | Implemented canonical scoped configuration and provider metadata schemas, candidate reasoning/nullable pricing and metadata-only document validators. RED provider metadata tests failed before implementation; 12 contract/settings tests, 18 control-plane/RPC tests, seven frontend Settings tests, both typechecks and scoped lint passed. Normal hooks additionally passed 34 backend tests. Candidate backend type reuses SDK instead of a mirror; adapted required source/fixture callers. — beyond writes: backend/test/tst_bts_ai_models_control_plane.test.ts, backend/test/tst_bts_api_ctl_ai_models.test.ts, frontend/src/modules/settings/__tests__/ModelsPanel.decision.test.tsx |
+| D1S1_T1 | f40061ad61a29112f510f7a1d23ede21cd91d12c | 2026-11-14T09:03:47.206Z–2026-11-14T09:16:43.026Z | 12.930333333333333 / 12.930333333333333 min | unavailable: not measured by planctl | Verified repair of canonical schema distribution: existing gen-host-stubs supports explicit SDK subpaths and emits their transitive contracts without replacing unrelated host APIs. RED fixture proved the old full export deleted an unrelated API; scoped export fixture is GREEN. Preserved optional live reasoning on saved-model documents and updated canonical candidate fixtures; seven SDK/export tests and four affected frontend-hook tests pass. SDK build and normal commit checks pass. Updated AI Models documentation. — beyond writes: docs/backend/ai-models.md, frontend/src/modules/settings/hooks/__tests__/useAiModels.test.tsx, scripts/tests/host-stubs-contracts.test.ts |
 <!-- plan:results:D1-S1:end -->
 <!-- plan:stage:D1-S1:end -->
 
@@ -969,4 +970,12 @@ The catalog release includes the validated provider document and matches the fin
 - deviation D1-S1: packages/sdk/src/index.ts: re-export needs canonical source verification. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
 
 - close D1-S1 closed commit:dc834c6f7d3672ead4c2afdd6d4be557d439c73d
+
+- record-result D1-S1 commit:f40061ad61a29112f510f7a1d23ede21cd91d12c
+
+- deviation D1-S1: Full host export against this newer host baseline exposed unrelated Graph/layout API migrations in the standalone catalog. Restored only this task's generated export changes and added selective emission to the existing generator, rather than migrating unrelated product code. Required export regression test and documentation are ordinary implementation callers beyond the original narrow inventory.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiLogicalModelAdminInfoSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S1 closed commit:f40061ad61a29112f510f7a1d23ede21cd91d12c
 <!-- plan:execution:end -->

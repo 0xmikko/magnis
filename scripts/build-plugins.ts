@@ -26,6 +26,8 @@ import ts from "typescript";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 
+import { buildProviderCatalog } from "./build-provider-catalog.ts";
+
 import { descriptorFrom } from "../packages/declare/derive.ts";
 
 const REPO_ROOT = join(import.meta.dir, "..");
@@ -454,6 +456,7 @@ if (import.meta.main) {
   }
   const ids = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--out");
   const pluginsDir = REPO_ROOT;
+  buildProviderCatalog(join(REPO_ROOT, "providers"), join(distDir, "providers.json"));
 
   const buildOne = async (id: string): Promise<void> => {
     const r = await buildPlugin(id, { pluginsDir, distDir });

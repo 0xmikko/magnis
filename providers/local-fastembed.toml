@@ -1,0 +1,11 @@
+id = "local-fastembed"
+displayName = "Local FastEmbed"
+adapterId = "local-fastembed"
+authKind = "none"
+requiresEndpoint = false
+catalogSourceIds = [ "local-fastembed" ]
+models = []
+
+[configuration]
+kind = "model-provider"
+fields = []

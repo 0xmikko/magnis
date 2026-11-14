@@ -4,16 +4,47 @@ export declare const ModuleSettingsUpdateParamsSchema: z.ZodObject<{
     values: z.ZodRecord<z.ZodString, z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
 }, z.core.$strict>;
 export type ModuleSettingsUpdateParams = z.output<typeof ModuleSettingsUpdateParamsSchema>;
+/** One choice of an enum setting. */
+export interface EnumOption {
+    value: string;
+    label: string;
+    description: string | null;
+}
 export declare const EnumOptionSchema: z.ZodObject<{
     value: z.ZodString;
     label: z.ZodString;
     description: z.ZodNullable<z.ZodString>;
 }, z.core.$strict>;
-export type EnumOption = z.output<typeof EnumOptionSchema>;
+/** A module setting's type. A number says whether it takes fractions; a model
+ * names a model of AI Models by its capability, and only a model the AI Models
+ * directory lists as available for that capability is accepted. A
+ * moduleChoice's choices are what the module's RPC `<moduleId>.<method>`
+ * answers for the person asking, so only `[userSettings]` declares one. */
+export type ModuleSettingFieldType = {
+    type: "number";
+    min: number | null;
+    max: number | null;
+    integer: boolean;
+} | {
+    type: "string";
+    maxLength: number | null;
+} | {
+    type: "boolean";
+} | {
+    type: "enum";
+    options: readonly EnumOption[];
+} | {
+    type: "model";
+    capability: "language" | "embedding" | "decision";
+} | {
+    type: "moduleChoice";
+    method: string;
+};
 export declare const ModuleSettingFieldTypeSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"number">;
     min: z.ZodNullable<z.ZodNumber>;
     max: z.ZodNullable<z.ZodNumber>;
+    integer: z.ZodBoolean;
 }, z.core.$strict>, z.ZodObject<{
     type: z.ZodLiteral<"string">;
     maxLength: z.ZodNullable<z.ZodNumber>;
@@ -26,8 +57,26 @@ export declare const ModuleSettingFieldTypeSchema: z.ZodDiscriminatedUnion<[z.Zo
         label: z.ZodString;
         description: z.ZodNullable<z.ZodString>;
     }, z.core.$strict>>>;
+}, z.core.$strict>, z.ZodObject<{
+    type: z.ZodLiteral<"model">;
+    capability: z.ZodEnum<{
+        language: "language";
+        embedding: "embedding";
+        decision: "decision";
+    }>;
+}, z.core.$strict>, z.ZodObject<{
+    type: z.ZodLiteral<"moduleChoice">;
+    method: z.ZodString;
 }, z.core.$strict>], "type">;
-export type ModuleSettingFieldType = z.output<typeof ModuleSettingFieldTypeSchema>;
+/** One declared setting. */
+export interface ModuleSettingField {
+    key: string;
+    label: string;
+    description: string | null;
+    fieldType: ModuleSettingFieldType;
+    defaultValue: string;
+    confirmationMessage: string | null;
+}
 export declare const ModuleSettingFieldSchema: z.ZodObject<{
     key: z.ZodString;
     label: z.ZodString;
@@ -36,6 +85,7 @@ export declare const ModuleSettingFieldSchema: z.ZodObject<{
         type: z.ZodLiteral<"number">;
         min: z.ZodNullable<z.ZodNumber>;
         max: z.ZodNullable<z.ZodNumber>;
+        integer: z.ZodBoolean;
     }, z.core.$strict>, z.ZodObject<{
         type: z.ZodLiteral<"string">;
         maxLength: z.ZodNullable<z.ZodNumber>;
@@ -48,11 +98,27 @@ export declare const ModuleSettingFieldSchema: z.ZodObject<{
             label: z.ZodString;
             description: z.ZodNullable<z.ZodString>;
         }, z.core.$strict>>>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"model">;
+        capability: z.ZodEnum<{
+            language: "language";
+            embedding: "embedding";
+            decision: "decision";
+        }>;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"moduleChoice">;
+        method: z.ZodString;
     }, z.core.$strict>], "type">;
     defaultValue: z.ZodString;
     confirmationMessage: z.ZodNullable<z.ZodString>;
 }, z.core.$strict>;
-export type ModuleSettingField = z.output<typeof ModuleSettingFieldSchema>;
+/** A module's settings declaration: its manifest's `[settings]` or `[userSettings]`. */
+export interface ModuleSettingsSchema {
+    moduleId: string;
+    label: string;
+    description: string | null;
+    fields: readonly ModuleSettingField[];
+}
 export declare const ModuleSettingsSchemaSchema: z.ZodObject<{
     moduleId: z.ZodString;
     label: z.ZodString;
@@ -65,6 +131,7 @@ export declare const ModuleSettingsSchemaSchema: z.ZodObject<{
             type: z.ZodLiteral<"number">;
             min: z.ZodNullable<z.ZodNumber>;
             max: z.ZodNullable<z.ZodNumber>;
+            integer: z.ZodBoolean;
         }, z.core.$strict>, z.ZodObject<{
             type: z.ZodLiteral<"string">;
             maxLength: z.ZodNullable<z.ZodNumber>;
@@ -77,17 +144,40 @@ export declare const ModuleSettingsSchemaSchema: z.ZodObject<{
                 label: z.ZodString;
                 description: z.ZodNullable<z.ZodString>;
             }, z.core.$strict>>>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"model">;
+            capability: z.ZodEnum<{
+                language: "language";
+                embedding: "embedding";
+                decision: "decision";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"moduleChoice">;
+            method: z.ZodString;
         }, z.core.$strict>], "type">;
         defaultValue: z.ZodString;
         confirmationMessage: z.ZodNullable<z.ZodString>;
     }, z.core.$strict>>>;
 }, z.core.$strict>;
-export type ModuleSettingsSchema = z.output<typeof ModuleSettingsSchemaSchema>;
+/** One setting's current value. */
+export interface ModuleSettingValue {
+    key: string;
+    value: string;
+}
 export declare const ModuleSettingValueSchema: z.ZodObject<{
     key: z.ZodString;
     value: z.ZodString;
 }, z.core.$strict>;
-export type ModuleSettingValue = z.output<typeof ModuleSettingValueSchema>;
+/** One module in Settings → Modules: its workspace settings and the signed-in person's own. */
+export interface ModuleSettingsEntry {
+    moduleId: string;
+    label: string;
+    schema: ModuleSettingsSchema | null;
+    values: readonly ModuleSettingValue[];
+    userSchema: ModuleSettingsSchema | null;
+    /** The signed-in person's. */
+    userValues: readonly ModuleSettingValue[];
+}
 export declare const ModuleSettingsEntrySchema: z.ZodObject<{
     moduleId: z.ZodString;
     label: z.ZodString;
@@ -103,6 +193,7 @@ export declare const ModuleSettingsEntrySchema: z.ZodObject<{
                 type: z.ZodLiteral<"number">;
                 min: z.ZodNullable<z.ZodNumber>;
                 max: z.ZodNullable<z.ZodNumber>;
+                integer: z.ZodBoolean;
             }, z.core.$strict>, z.ZodObject<{
                 type: z.ZodLiteral<"string">;
                 maxLength: z.ZodNullable<z.ZodNumber>;
@@ -115,6 +206,16 @@ export declare const ModuleSettingsEntrySchema: z.ZodObject<{
                     label: z.ZodString;
                     description: z.ZodNullable<z.ZodString>;
                 }, z.core.$strict>>>;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"model">;
+                capability: z.ZodEnum<{
+                    language: "language";
+                    embedding: "embedding";
+                    decision: "decision";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"moduleChoice">;
+                method: z.ZodString;
             }, z.core.$strict>], "type">;
             defaultValue: z.ZodString;
             confirmationMessage: z.ZodNullable<z.ZodString>;
@@ -124,6 +225,49 @@ export declare const ModuleSettingsEntrySchema: z.ZodObject<{
         key: z.ZodString;
         value: z.ZodString;
     }, z.core.$strict>>>;
+    userSchema: z.ZodNullable<z.ZodObject<{
+        moduleId: z.ZodString;
+        label: z.ZodString;
+        description: z.ZodNullable<z.ZodString>;
+        fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            key: z.ZodString;
+            label: z.ZodString;
+            description: z.ZodNullable<z.ZodString>;
+            fieldType: z.ZodDiscriminatedUnion<[z.ZodObject<{
+                type: z.ZodLiteral<"number">;
+                min: z.ZodNullable<z.ZodNumber>;
+                max: z.ZodNullable<z.ZodNumber>;
+                integer: z.ZodBoolean;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"string">;
+                maxLength: z.ZodNullable<z.ZodNumber>;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"boolean">;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"enum">;
+                options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+                    value: z.ZodString;
+                    label: z.ZodString;
+                    description: z.ZodNullable<z.ZodString>;
+                }, z.core.$strict>>>;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"model">;
+                capability: z.ZodEnum<{
+                    language: "language";
+                    embedding: "embedding";
+                    decision: "decision";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                type: z.ZodLiteral<"moduleChoice">;
+                method: z.ZodString;
+            }, z.core.$strict>], "type">;
+            defaultValue: z.ZodString;
+            confirmationMessage: z.ZodNullable<z.ZodString>;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>;
+    userValues: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        key: z.ZodString;
+        value: z.ZodString;
+    }, z.core.$strict>>>;
 }, z.core.$strict>;
-export type ModuleSettingsEntry = z.output<typeof ModuleSettingsEntrySchema>;
 //# sourceMappingURL=module-settings.d.ts.map

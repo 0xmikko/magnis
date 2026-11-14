@@ -1,0 +1,32 @@
+id = "openrouter"
+displayName = "OpenRouter"
+adapterId = "openai-compatible"
+authKind = "api_key"
+endpoint = "https://openrouter.ai/api/v1"
+requiresEndpoint = true
+catalogSourceIds = [ "models-dev", "configured-provider" ]
+models = []
+
+[configuration]
+kind = "model-provider"
+
+[[configuration.fields]]
+kind = "setting"
+required = true
+environment = true
+
+[configuration.fields.field]
+key = "BASE_URL"
+label = "API address"
+defaultValue = ""
+
+[configuration.fields.field.fieldType]
+type = "string"
+
+[[configuration.fields]]
+kind = "secret"
+key = "API_KEY"
+label = "API key"
+required = true
+environment = true
+delivery = "host_only"

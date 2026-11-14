@@ -1,0 +1,32 @@
+id = "anthropic"
+displayName = "Anthropic"
+adapterId = "anthropic"
+authKind = "api_key"
+endpoint = "https://api.anthropic.com/v1"
+requiresEndpoint = false
+catalogSourceIds = [ "models-dev" ]
+models = []
+
+[configuration]
+kind = "model-provider"
+
+[[configuration.fields]]
+kind = "setting"
+required = false
+environment = true
+
+[configuration.fields.field]
+key = "BASE_URL"
+label = "API address"
+defaultValue = ""
+
+[configuration.fields.field.fieldType]
+type = "string"
+
+[[configuration.fields]]
+kind = "secret"
+key = "API_KEY"
+label = "API key"
+required = true
+environment = true
+delivery = "host_only"

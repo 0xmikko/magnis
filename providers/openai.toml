@@ -1,0 +1,86 @@
+id = "openai"
+displayName = "OpenAI"
+adapterId = "openai"
+authKind = "api_key"
+endpoint = "https://api.openai.com/v1"
+requiresEndpoint = false
+catalogSourceIds = [ "models-dev", "configured-provider" ]
+
+[configuration]
+kind = "model-provider"
+
+[[configuration.fields]]
+kind = "setting"
+required = false
+environment = true
+
+[configuration.fields.field]
+key = "BASE_URL"
+label = "API address"
+defaultValue = ""
+
+[configuration.fields.field.fieldType]
+type = "string"
+
+[[configuration.fields]]
+kind = "secret"
+key = "API_KEY"
+label = "API key"
+required = true
+environment = true
+delivery = "host_only"
+
+[[models]]
+sourceId = "configured-provider"
+adapterId = "openai"
+physicalModelId = "gpt-6-luna"
+displayName = "gpt-6-luna"
+capability = "decision"
+dataBoundary = "cloud_allowed"
+
+[models.reasoning]
+state = "none"
+revision = "curated:2026-10-08"
+canUseProviderDefault = false
+
+[models.price]
+inputPerMtokMicros = 100000
+outputPerMtokMicros = 0
+
+[[models]]
+sourceId = "configured-provider"
+adapterId = "openai"
+physicalModelId = "text-embedding-3-small"
+displayName = "text-embedding-3-small"
+capability = "embedding"
+dataBoundary = "cloud_allowed"
+dimensions = 1536
+normalization = "l2"
+
+[models.reasoning]
+state = "none"
+revision = "curated:2026-10-08"
+canUseProviderDefault = false
+
+[models.price]
+inputPerMtokMicros = 20000
+outputPerMtokMicros = 0
+
+[[models]]
+sourceId = "configured-provider"
+adapterId = "openai"
+physicalModelId = "text-embedding-3-large"
+displayName = "text-embedding-3-large"
+capability = "embedding"
+dataBoundary = "cloud_allowed"
+dimensions = 3072
+normalization = "l2"
+
+[models.reasoning]
+state = "none"
+revision = "curated:2026-10-08"
+canUseProviderDefault = false
+
+[models.price]
+inputPerMtokMicros = 130000
+outputPerMtokMicros = 0

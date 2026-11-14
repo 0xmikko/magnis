@@ -12,6 +12,8 @@
 //   source (rust) → manifest.toml only in v1 (the binary ships with the app;
 //                   per-platform release binaries are planned)
 //   source (manifest-only) → manifest.toml (external spawn must be version-pinned)
+import { buildProviderCatalog } from "./build-provider-catalog.ts";
+
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
 import { gzipSync } from "node:zlib";
@@ -511,6 +513,7 @@ export function stageBundledSourcePackage(
 async function buildCatalog(): Promise<void> {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
+  buildProviderCatalog(join(ROOT, "providers"), join(OUT, "providers.json"));
   const packages: Entry[] = [];
   const moduleGraph = new Map<string, ManifestFacts>();
   const sourceGraph = new Map<string, SourceFacts>();
