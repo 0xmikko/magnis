@@ -16,3 +16,4 @@ export const WorkspaceTransferReceiptSchema = z.strictObject({
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
     status: z.enum(["imported", "alreadyImported"]),
 });
+//# sourceMappingURL=workspace.js.map

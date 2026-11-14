@@ -92,3 +92,4 @@ export function parseRpcOutput(contract, value) {
 export function parseStreamChunk(contract, value) {
     return parseContractValue(contract.method, "chunk", contract.chunk, value);
 }
+//# sourceMappingURL=contract.js.map

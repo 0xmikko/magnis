@@ -32,6 +32,8 @@ describe("declarative provider catalog", () => {
       rmSync(join(root, "b.toml"));
       writeFileSync(join(root, "a.toml"), provider("valid") + '\ncode = "malicious.js"\n');
       expect(() => readProviderCatalog(root)).toThrow();
+      writeFileSync(join(root, "a.toml"), provider("valid").replace("[configuration]", 'apiKey = "must-not-be-published"\n[configuration]'));
+      expect(() => readProviderCatalog(root)).toThrow();
       writeFileSync(join(root, "a.toml"), provider("valid").replace('adapterId = "openai-compatible"\n', ""));
       expect(() => readProviderCatalog(root)).toThrow();
     } finally { rmSync(root, { recursive: true, force: true }); }

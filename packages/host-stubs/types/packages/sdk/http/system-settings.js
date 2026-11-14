@@ -432,3 +432,4 @@ export const systemSettingsHttpContracts = [
     setUserAdminContract,
     updateWorkspaceContract,
 ];
+//# sourceMappingURL=system-settings.js.map

@@ -11,3 +11,4 @@ export function parseUuidShape(value) {
     const result = UuidShapeSchema.safeParse(value);
     return result.success ? result.data : null;
 }
+//# sourceMappingURL=uuid.js.map

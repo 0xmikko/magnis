@@ -9,3 +9,4 @@ export const PersistentEntityIdSchema = UuidShapeSchema
     .refine((id) => id !== nilId, "Persistent Entity ID must not be nil")
     .brand();
 export const EntityIdSchema = z.union([PersistentEntityIdSchema, z.literal(nilId)]);
+//# sourceMappingURL=id.js.map

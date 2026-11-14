@@ -22,3 +22,14 @@ export const VerifiedAuthSchema = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("apiKey"), keyFrom: z.enum(["vault", "env"]), subject: z.string() }),
     z.object({ kind: z.literal("sharedProvider"), subject: z.string() }),
 ]);
+/** Private Source auth result: only the host credential lifecycle consumes
+ * this value. It is never a user tool result or an account status payload. */
+export const SourceCredentialRefreshResultSchema = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("current") }).strict(),
+    z.object({
+        kind: z.literal("rotated"),
+        credential: z.string().min(1),
+        identity: z.object({ key: z.string().min(1), label: z.string().min(1) }).strict(),
+    }).strict(),
+]);
+//# sourceMappingURL=source-auth.js.map

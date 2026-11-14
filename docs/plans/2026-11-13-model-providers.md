@@ -658,20 +658,21 @@ Application values and explicit clears survive restart while environment values 
 
 ##### Tasks
 
-- [ ] D1S3_T1 — Application values and explicit clears survive restart while environment values fill only unset declared fields. (60 min)
+- [x] D1S3_T1 — Application values and explicit clears survive restart while environment values fill only unset declared fields. (60 min) — 7289d0595
 <!-- plan:task-meta:{"writes":["backend/src/services/settings/","backend/src/config/","backend/src/services/module-settings/","backend/src/services/app-settings/","backend/src/services/secrets/","backend/src/services/sources/","backend/src/agent/models/","backend/src/db/schema/","backend/migrations/","backend/src/db/migrations.ts","backend/test/tst_bts_declared_configuration.test.ts","backend/test/tst_bts_settings_facade.test.ts","backend/test/tst_bts_app_serve_config.test.ts"],"predictedActiveMinutes":60,"predictedCredits":6,"how":"Write RED coordinator cases for unset/set/cleared fields, false/zero/valid-empty settings, collision rejection and application-save races using existing DB/settings harnesses. Extend SettingsService to orchestrate seeding from the existing resolved ConfigService snapshot after admitted declarations and the saved model directory are ready. Existing capability owners validate and persist; there is no new parser, settings DB or startup supervisor. Persist field state and clear tombstones with ordinary values or encrypted secrets and the owning revision in one UnitOfWork transaction. Validate a target before writing any of it; unavailable encryption or missing required values remains an explicit error. Skip persisted set/cleared fields before validating obsolete env values; reject complete-name collisions using the existing envSegment transformation. Preserve launch precedence and repeat seeding only on startup or relevant existing admission/refresh events.","red":"bun run agent:test:backend -- test/tst_bts_declared_configuration.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_declared_configuration.test.ts test/tst_bts_settings_facade.test.ts` exits 0 — seed-only import, atomicity, clears and save races obey the declared ownership
-- [ ] `bun run agent:test:backend -- test/tst_bts_app_serve_config.test.ts` exits 0 — flags/process environment/.env launch precedence is preserved
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_declared_configuration.test.ts test/tst_bts_settings_facade.test.ts` exits 0 — seed-only import, atomicity, clears and save races obey the declared ownership — 7289d05955c0bd5a3b63444ce5e6044e9dcdc86d
+- [x] `bun run agent:test:backend -- test/tst_bts_app_serve_config.test.ts` exits 0 — flags/process environment/.env launch precedence is preserved — 7289d05955c0bd5a3b63444ce5e6044e9dcdc86d
+- [x] Commit — 7289d05955c0bd5a3b63444ce5e6044e9dcdc86d
 
 ##### Results
 
 <!-- plan:results:D1-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S3_T1 | 7289d0595 | 2026-11-14T10:02:12.792Z–2026-11-14T10:22:22.632Z | 20.164 / 20.164 min | unavailable: not measured by planctl | Settings coordinates admitted targets through one seed-only transaction path. Existing app_settings holds origin/clear metadata without copying values or secrets; target row locks serialize imports and application saves. Module startup/admission seeding uses ConfigService.raw and existing field/model validation, preserves false/zero/empty strings and durable clears, and blocks portable runtime reads after invalid imports while leaving Settings editable. Canonical TOML schemas and Source scope/name helpers are shared with catalog build validation. RED missing coordinator reproduced; 8 new DB/vault/lifecycle cases, launch precedence checks, backend typecheck/scoped lint and normal hooks passed (427 backend and 823 frontend tests). — beyond writes: backend/src/plugin-runtime/manifest-parser.ts, backend/src/services/extensions/extension.service.ts, backend/test/harness/transport-state.ts, backend/test/tst_bts_api_ctl_module_settings.test.ts, backend/test/tst_bts_ext_wire_pins.test.ts, backend/test/tst_bts_search_lifecycle.test.ts, backend/test/tst_bts_triggers_gate.test.ts, docs/architecture/reuse-map.md, docs/backend/modules.md, packages/sdk/src/core/extension-configuration.ts, packages/sdk/src/core/module-settings.ts, packages/sdk/src/index.ts |
 <!-- plan:results:D1-S3:end -->
 <!-- plan:stage:D1-S3:end -->
 
@@ -688,21 +689,22 @@ Saved provider bindings remain exact and Source admission, configured status, au
 
 ##### Tasks
 
-- [ ] D1S4_T1 — Saved provider bindings remain exact and Source admission, configured status, authentication and execution use the same persisted values. (65 min)
+- [x] D1S4_T1 — Saved provider bindings remain exact and Source admission, configured status, authentication and execution use the same persisted values. (65 min) — d7bd895d8
 <!-- plan:task-meta:{"writes":["backend/src/services/sources/","backend/src/services/settings/","backend/src/agent/models/","backend/src/services/module-settings/","frontend/src/modules/settings/","packages/sdk/src/core/ai-model.ts","backend/test/tst_bts_ai_models_control_plane.test.ts","backend/test/tst_bts_settings_app_ai.test.ts","backend/test/tst_bts_source_auth_http.test.ts","backend/test/tst_bts_source_host_command.test.ts","backend/test/tst_bts_declared_configuration.test.ts","frontend/src/modules/settings/__tests__/ModelsPanel.decision.test.tsx","frontend/src/modules/settings/hooks/"],"predictedActiveMinutes":65,"predictedCredits":7,"how":"Add RED zero/one/multiple/unmapped provider-import cases and preserve connection IDs, per-connection credentials, model references, explicit clears and ID-collision refusal. Resolve new MP imports by persisted catalog identity or the specified exact legacy adapter/endpoint rules. Refuse only the ambiguous target; preserve executable existing connections. Migrate legacy OpenAI/TypeSafe aliases only under their prior eligibility and remove runtime env fallbacks after seeding. Consolidate Source auth/status/host/binding-pool reads through their existing persisted credential owner, retaining account-generation locators. Replace provider-name admission/form branches with canonical descriptor fields and existing Settings components. Verify existing authorized Module reads and model-capability validation without module secret access or direct network. Change data binding and validation only; no new frontend layout or controls.","red":"bun run agent:test:backend -- test/tst_bts_ai_models_control_plane.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_ai_models_control_plane.test.ts test/tst_bts_declared_configuration.test.ts test/tst_bts_settings_app_ai.test.ts` exits 0 — new environment imports preserve all existing connection identities and clears
-- [ ] `bun run agent:test:backend -- test/tst_bts_source_auth_http.test.ts test/tst_bts_source_host_command.test.ts` exits 0 — Source status, auth and execution resolve the same scoped credentials
-- [ ] `bun run agent:test:frontend -- src/modules/settings/__tests__/ModelsPanel.decision.test.tsx` exits 0 — existing provider Settings components render descriptor-driven behavior
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_ai_models_control_plane.test.ts test/tst_bts_declared_configuration.test.ts test/tst_bts_settings_app_ai.test.ts` exits 0 — new environment imports preserve all existing connection identities and clears — d7bd895d84c44f76e02766705b648eacd648bdee
+- [x] `bun run agent:test:backend -- test/tst_bts_source_auth_http.test.ts test/tst_bts_source_host_command.test.ts` exits 0 — Source status, auth and execution resolve the same scoped credentials — d7bd895d84c44f76e02766705b648eacd648bdee
+- [x] `bun run agent:test:frontend -- src/modules/settings/__tests__/ModelsPanel.decision.test.tsx` exits 0 — existing provider Settings components render descriptor-driven behavior — d7bd895d84c44f76e02766705b648eacd648bdee
+- [x] Commit — d7bd895d84c44f76e02766705b648eacd648bdee
 
 ##### Results
 
 <!-- plan:results:D1-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S4_T1 | d7bd895d8 | 2026-11-14T10:22:26.614Z–2026-11-14T11:23:53.800Z | 61.4531 / 61.4531 min | unavailable: not measured by planctl | Unified persisted provider/Source configuration, exact saved identity admission and one-time legacy aliases; runtime has no env/manifest secret fallback. RED then GREEN explicit-clear regression also covers historical plaintext migration. Zero/one/multiple/unmapped/collision and MP precedence tests, Source clear/restart, auth/refresh/runtime, descriptor-driven existing Settings form pass. Scoped TypeScript/lint green; normal hooks passed 523 backend and 25 frontend tests. Necessary caller refinements include startup seed wiring, shared AppSettings lock/state helpers, vault UOW support, isolated smoke compile-only adaptation and route-only harness lifecycle; no shared smoke/model runs. — beyond writes: backend/scripts/typesafe-decision-smoke.ts, backend/src/agent/adapters/provider-model-catalog.source.ts, backend/src/app/composition-wiring.module.ts, backend/src/services/app-settings/app-settings.repository.ts, backend/src/services/extensions/extension-artifact-codec.ts, backend/src/services/secrets/scoped-secret.store.ts, backend/test/harness/configuration.ts, backend/test/harness/http.ts, backend/test/tst_bts_ai_models_user_repo.test.ts, backend/test/tst_bts_ai_runtime_decision.test.ts, backend/test/tst_bts_ai_runtime_language.test.ts, backend/test/tst_bts_api_ctl_ai_models.test.ts, backend/test/tst_bts_api_ctl_sources.test.ts, backend/test/tst_bts_ext_wire_pins.test.ts, backend/test/tst_bts_fireflies_wire.test.ts, backend/test/tst_bts_github_integration.test.ts, backend/test/tst_bts_mcp_controller.test.ts, backend/test/tst_bts_mcp_loader.test.ts, backend/test/tst_bts_mcp_runtime.test.ts, backend/test/tst_bts_settings_facade.test.ts, backend/test/tst_bts_source_command_only.test.ts, backend/test/tst_bts_src_account_001.test.ts, backend/test/tst_bts_src_auth_kinds_001.test.ts, backend/test/tst_bts_src_service.test.ts, backend/test/tst_bts_src_status_001.test.ts, backend/test/tst_bts_srcauth_orchestrator.test.ts, backend/test/tst_bts_sync_seed_001.test.ts, docs/backend/ai-models.md, docs/backend/deduplication.md, docs/backend/module-subscriptions.md, docs/backend/sources.md, docs/backend/sync.md, docs/plugins/authoring.md, scripts/llm-call-sites-audit.sh |
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
@@ -719,19 +721,20 @@ The ledger distinguishes measured, partial and unavailable spend and replaying o
 
 ##### Tasks
 
-- [ ] D1S5_T1 — The ledger distinguishes measured, partial and unavailable spend and replaying one physical invocation never debits twice. (65 min)
+- [x] D1S5_T1 — The ledger distinguishes measured, partial and unavailable spend and replaying one physical invocation never debits twice. (65 min) — 1393cd4a1
 <!-- plan:task-meta:{"writes":["backend/src/core/llm-call.ts","backend/src/agent/billing/","backend/src/agent/credits/","backend/src/services/credits/","backend/src/db/schema/billing.ts","backend/src/db/schema/credit.ts","backend/src/db/unit-of-work.ts","backend/src/db/migrations.ts","backend/migrations/","backend/test/tst_bts_billing_repository.test.ts","backend/test/tst_bts_billing_spool.test.ts","backend/test/tst_bts_billing_module.test.ts","backend/test/tst_bts_core_billing.test.ts","backend/test/harness/recording-engine-metering.ts","packages/sdk/src/core/ai-model.ts","packages/sdk/test/"],"predictedActiveMinutes":65,"predictedCredits":7,"how":"Add RED cases for nullable evidence, measured-prefix costs, subscription zero with unknown tokens, same-call-ID replay without a provider request ID and equal upstream IDs on different saved connections. Extend canonical LlmCallRecord and RecordLlmCallReport while preserving existing snake_case names. Migrate llm_call nullability and evidence through the existing migration owner; keep system embeddings user_id null and existing user IDs intact. Finalize ledger insertion/deduplication and known credit mutation in one existing UnitOfWork. Preserve integer-micros pricing, upstream deduplication scoped by connection, and existing hosted reservation policy separate from actual spend. Decode old spool entries and historical rows as legacy without inferring completeness from numeric zeros; preserve old metadata in details and replay identity. Reuse the existing spool and repositories, with no additional ledger or queue. Add the shared evidence unions to their canonical SDK owner additively; backend records reuse them before D1-S6 widens the public receipt.","red":"bun run agent:test:backend -- test/tst_bts_billing_repository.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_billing_repository.test.ts test/tst_bts_billing_spool.test.ts test/tst_bts_core_billing.test.ts` exits 0 — migration, partial/null evidence and replay preserve balances and historical values
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_billing_repository.test.ts test/tst_bts_billing_spool.test.ts test/tst_bts_core_billing.test.ts` exits 0 — migration, partial/null evidence and replay preserve balances and historical values — 1393cd4a119259eb606d65b6acaec88a7b7f919e
+- [x] Commit — 1393cd4a119259eb606d65b6acaec88a7b7f919e
 
 ##### Results
 
 <!-- plan:results:D1-S5:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S5_T1 | 1393cd4a1 | 2026-11-14T11:24:12.949Z–2026-11-14T11:38:42.986Z | 14.500616666666666 / 14.500616666666666 min | unavailable: not measured by planctl | RED reproduced same-invocation primary-key failure, null usage crash and cross-connection request collision. GREEN evidence schema/migration preserves historical numbers/users/metadata as legacy, system null user, known subscription/local zero and unknown missing prices. Existing UnitOfWork now atomically inserts/deduplicates and invokes CreditService debit; duplicate returns persisted amount and spool replay shares finalization. Real DB tests cover rollback, replay-once, measured prefix, connection request scope and historical migration; old/new spool round trips pass. SDK evidence unions and necessary nullable ledger RPC counters propagated. Normal hooks passed 90 backend and 823 frontend tests plus typecheck/lint. — beyond writes: backend/src/core/pricing.ts, backend/src/db/schema/agent.ts, backend/src/transport/websocket/controllers/billing.ts, backend/test/fixtures/wire/jsonb-keys.json, backend/test/tst_bts_api_ctl_ai_models.test.ts, backend/test/tst_bts_billing_service.test.ts, docs/architecture/contracts/billing.md, docs/architecture/reuse-map.md, docs/backend/ai-models.md, docs/source-mcp-bridge.md, packages/sdk/src/rpc/native/billing.ts |
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 
@@ -748,20 +751,21 @@ Every upstream invocation reports host-derived attribution and actual evidence w
 
 ##### Tasks
 
-- [ ] D1S6_T1 — Every upstream invocation reports host-derived attribution and actual evidence without fabricated usage or duplicate outer charges. (70 min)
+- [x] D1S6_T1 — Every upstream invocation reports host-derived attribution and actual evidence without fabricated usage or duplicate outer charges. (70 min) — 408f67cf6
 <!-- plan:task-meta:{"writes":["packages/sdk/src/core/ai-model.ts","packages/sdk/src/core/episode.ts","packages/sdk/test/","backend/src/core/ai-runtime.ts","backend/src/agent/models/","backend/src/agent/adapters/","backend/src/agent/orchestration/","backend/src/agent/episodes/","backend/src/agent/codex/","backend/src/agent/claude/","backend/src/agent/magnis/","backend/src/graph/","backend/src/services/search/","backend/test/tst_bts_ai_runtime_language.test.ts","backend/test/tst_bts_ai_runtime_embedding.test.ts","backend/test/tst_bts_ai_runtime_decision.test.ts","backend/test/harness/","packages/client-core/","cli/"],"predictedActiveMinutes":70,"predictedCredits":7,"how":"Write RED success/failure/cancellation cases using deterministic language, decision and embedding fixtures, including measured usage before malformed decision answers and no usage after contact. Apply the approved AiCallAccounting contract in SDK schemas and runtime owners together with all required callers. Derive provider definition, model, exact connection, revision, Episode and operation context from admitted host bindings. Record one ledger measurement per physical SDK request or embedding batch, grouping multi-step operations without an extra debit. Keep system-scoped embeddings unassigned to a user and avoid inventing Episode context for background work. Native subscription engines preserve their existing subscription authentication; whole-turn-only evidence writes one native_turn measurement. Metered successful calls require complete known usage and cost; subscriptions/local execution can report known zero charge independently of tokens. Preserve full native SDK metadata.","red":"bun run agent:test:backend -- test/tst_bts_ai_runtime_decision.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_ai_runtime_language.test.ts test/tst_bts_ai_runtime_embedding.test.ts test/tst_bts_ai_runtime_decision.test.ts` exits 0 — all three capabilities preserve actual usage, attribution, cancellation and complete native results
-- [ ] `bun run agent:build:sdk` exits 0 — receipt and turn contracts build with matching canonical schemas
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_ai_runtime_language.test.ts test/tst_bts_ai_runtime_embedding.test.ts test/tst_bts_ai_runtime_decision.test.ts` exits 0 — all three capabilities preserve actual usage, attribution, cancellation and complete native results — 408f67cf6db354d86ea866420b5db0f466ca59cb
+- [x] `bun run agent:build:sdk` exits 0 — receipt and turn contracts build with matching canonical schemas — 408f67cf6db354d86ea866420b5db0f466ca59cb
+- [x] Commit — 408f67cf6db354d86ea866420b5db0f466ca59cb
 
 ##### Results
 
 <!-- plan:results:D1-S6:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S6_T1 | 408f67cf6 | 2026-11-14T11:38:48.002Z–2026-11-14T12:20:09.416Z | 41.3569 / 41.3569 min | unavailable: not measured by planctl | RED reproduced contacted language failure fabricating zero. Physical invocation IDs and effective pricing are pinned before SDK contact; one existing MeteringService rule prices evidence and atomically finalizes each call. Two-step success and interrupted-step fixtures prove separate ledger rows, grouped complete/partial receipts and no outer debit. Embedding batches record system user null and preserve metadata; absent metered usage stays unknown while local usage has known zero charge. Decision partial raw evidence survives invalid answers. Native subscription shell records one native_turn with available counters and zero charge, never treating cumulative Codex thread totals as current-turn usage. Host context supplies actual provider, connection, model, revision and Episode/existing operation attribution. Backend/frontend typechecks, scoped lint and normal commit hooks pass, including 823 frontend tests and affected backend suites. No real model, benchmark or shared smoke runs. — beyond writes: backend/scripts/typesafe-decision-smoke.ts, backend/src/agent/billing/metering.service.ts, backend/src/agent/runtime/native-agent-adapter.ts, backend/src/agent/runtime/native-agent-execution.ts, backend/src/agent/runtime/native-agent.ts, backend/test/tst_bts_agent_loop.test.ts, backend/test/tst_bts_agent_service_configuration.test.ts, backend/test/tst_bts_ai_models_contract.test.ts, backend/test/tst_bts_ai_models_control_plane.test.ts, backend/test/tst_bts_ai_runtime_mock.test.ts, backend/test/tst_bts_api_ctl_ai_models.test.ts, backend/test/tst_bts_delegation_001.test.ts, backend/test/tst_bts_graph_dedup_review.test.ts, backend/test/tst_bts_magnis_agent_runtime.test.ts, backend/test/tst_bts_native_agent_pending.test.ts, backend/test/tst_bts_native_agent_runtime.test.ts, docs/agent/native-agent-architecture.md, docs/architecture/contracts/agent.md, docs/architecture/contracts/billing.md, docs/backend/ai-models.md |
 <!-- plan:results:D1-S6:end -->
 <!-- plan:stage:D1-S6:end -->
 
@@ -778,20 +782,21 @@ Existing spend reports display unknown and partial amounts honestly while preser
 
 ##### Tasks
 
-- [ ] D1S7_T1 — Existing spend reports display unknown and partial amounts honestly while preserving known subscription zero and legacy totals. (55 min)
+- [x] D1S7_T1 — Existing spend reports display unknown and partial amounts honestly while preserving known subscription zero and legacy totals. (55 min) — 071d9e1fd
 <!-- plan:task-meta:{"writes":["packages/sdk/src/core/billing.ts","packages/sdk/src/core/episode-usage.ts","packages/sdk/src/core/episode.ts","packages/sdk/src/http/billing.ts","packages/sdk/src/rpc/native/billing.ts","packages/sdk/test/","backend/src/agent/billing/","backend/src/agent/episodes/","backend/src/agent/orchestration/","backend/src/services/episodes/","backend/src/transport/","backend/test/tst_bts_billing_repository.test.ts","backend/test/tst_bts_billing_service.test.ts","backend/test/tst_bts_billing_module.test.ts","frontend/src/modules/settings/billing/","frontend/src/modules/settings/BillingPanel.tsx","frontend/src/modules/settings/hooks/","frontend/src/modules/settings/__tests__/BillingPanel.test.tsx","frontend/src/agent/","frontend/src/tauri/","packages/client-core/","packages/client-react/","cli/"],"predictedActiveMinutes":55,"predictedCredits":6,"how":"Add RED aggregate cases for mixed complete/partial/unreported/legacy calls, no known metric, subscription zero without tokens and no double-counting of Episode/turn summaries. Implement the approved BillingCoverage and nullable SDK report types, SQL/row decoders and AgentTurnAccounting projections together. Remove only defaults that hide missing usage; measured prefixes stay labelled incomplete. Adapt existing frontend and CLI presentation and matching generated SDK/client readers to show unknown, incomplete and zero distinctly. Retain existing Settings layout and controls. Verify historical numeric reports retain amounts with legacy provenance, user reports exclude system-scoped rows and generated schemas reject fabricated numeric compatibility for old decoders.","red":"bun run agent:test:backend -- test/tst_bts_billing_service.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_billing_repository.test.ts test/tst_bts_billing_service.test.ts test/tst_bts_billing_module.test.ts` exits 0 — ledger/aggregate/turn coverage and historical totals agree
-- [ ] `bun run agent:test:frontend -- src/modules/settings/__tests__/BillingPanel.test.tsx` exits 0 — existing billing presentation distinguishes unknown, partial and known zero
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_billing_repository.test.ts test/tst_bts_billing_service.test.ts test/tst_bts_billing_module.test.ts` exits 0 — ledger/aggregate/turn coverage and historical totals agree — 071d9e1fd8b115439260765ecaa371fc99cd48fe
+- [x] `bun run agent:test:frontend -- src/modules/settings/__tests__/BillingPanel.test.tsx` exits 0 — existing billing presentation distinguishes unknown, partial and known zero — 071d9e1fd8b115439260765ecaa371fc99cd48fe
+- [x] Commit — 071d9e1fd8b115439260765ecaa371fc99cd48fe
 
 ##### Results
 
 <!-- plan:results:D1-S7:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S7_T1 | 071d9e1fd | 2026-11-14T12:20:58.731Z–2026-11-14T12:41:23.774Z | 20.417383333333333 / 20.417383333333333 min | unavailable: not measured by planctl | The complete aggregate implementation is in ancestor 1a6889f1e; this closure commit reuses canonical EpisodeUsageSummary fields in the retained client instead of duplicating metric definitions and updates reviewed documentation. RED mixed-evidence aggregation and Episode-final-total tests now pass through the real database. Canonical nullable SDK reports carry independent usage/cost coverage; daily and detailed Episode sums retain only known amounts and explicit subscription zero. Final Episode totals stay null if any terminal turn lacks that metric; physical-call coverage does not add call amounts to turn totals again. Historical turn-only values remain legacy. Matched transport, retained client, Settings tables and CLI preserve null and display Unknown/incomplete/zero distinctly. Backend/frontend and CLI typechecks, scoped lint, 55 ledger/turn tests, 26 transport/core tests, 138 client runtime tests, 20 CLI cases and 21 SDK cases pass. Normal commit hooks pass, including 824 frontend tests. No model, benchmark or shared-smoke run. — beyond writes: docs/architecture/entity-lifecycle.md, docs/backend/ai-models.md |
 <!-- plan:results:D1-S7:end -->
 <!-- plan:stage:D1-S7:end -->
 
@@ -883,19 +888,20 @@ Catalog Sources and Modules expose their declared settings without receiving the
 
 ##### Tasks
 
-- [ ] D2S2_T1 — Catalog Sources and Modules expose their declared settings without receiving the environment file or undeclared credentials. (30 min)
+- [x] D2S2_T1 — Catalog Sources and Modules expose their declared settings without receiving the environment file or undeclared credentials. (30 min) — 1207995
 <!-- plan:task-meta:{"writes":["sources/","modules/","packages/declare/","packages/plugin-sdk/","packages/testkit/","scripts/build-plugins.ts","scripts/build-plugins.test.ts","scripts/bundled-item-schemas.test.ts","docs/plugins/"],"predictedActiveMinutes":30,"predictedCredits":3,"how":"Add RED manifest cases for Source credential declarations, ordinary Module settings and rejected Module secret declarations using the existing build-plugins tests. Express environment eligibility through existing Source/Module manifest/schema owners and their canonical shared field declaration; derive SOURCE and MODULE names in the host from admitted IDs, never allow arbitrary prefixes. Retain Source installation trust, existing account/deployment credential scope and portable non-secret Module reads. Do not add publisher signing-key administration or a module credential API. Adapt affected catalog declaration consumers and fixtures, documenting that Module preferences must not contain secrets. Retired development Source fixtures and launcher process variables remain outside this migration.","red":"bun run agent:test:backend -- scripts/build-plugins.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/bundled-item-schemas.test.ts` exits 0 — admitted declarations retain existing build behavior and reject Module secrets
-- [ ] Commit
+- [x] `bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/bundled-item-schemas.test.ts` exits 0 — admitted declarations retain existing build behavior and reject Module secrets — 1207995c7a9a95f5ad4b12488341cc65f8b82197
+- [x] Commit — 1207995c7a9a95f5ad4b12488341cc65f8b82197
 
 ##### Results
 
 <!-- plan:results:D2-S2:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D2S2_T1 | 1207995 | 2026-11-14T09:55:54.083Z–2026-11-14T10:02:10.625Z | 6.2757 / 6.2757 min | unavailable: not measured by planctl | Build admission now validates ordinary Module settings and explicit Source configuration with canonical SDK manifest schemas; Modules cannot declare secrets/credentials or another owner ID. Google, Telegram and Anysite declare only deployment credentials; minted/labeled account keys and arbitrary prefixes are refused. Shared provider metadata normalization replaces the catalog-only variant. RED Module secret build reproduced acceptance; 31 scoped declaration/build/certification tests, full catalog typecheck and normal hooks pass. — beyond writes: packages/host-stubs/types/packages/sdk/core/ai-model.d.ts.map, packages/host-stubs/types/packages/sdk/core/ai-model.js, packages/host-stubs/types/packages/sdk/core/ai-model.js.map, packages/host-stubs/types/packages/sdk/core/extension-configuration.d.ts, packages/host-stubs/types/packages/sdk/core/extension-configuration.d.ts.map, packages/host-stubs/types/packages/sdk/core/extension-configuration.js, packages/host-stubs/types/packages/sdk/core/extension-configuration.js.map, packages/host-stubs/types/packages/sdk/core/module-settings.d.ts, packages/host-stubs/types/packages/sdk/core/module-settings.d.ts.map, packages/host-stubs/types/packages/sdk/core/module-settings.js, packages/host-stubs/types/packages/sdk/core/module-settings.js.map, providers/github-copilot-enterprise.toml, providers/github-copilot.toml, providers/openai.toml, providers/typesafe.toml, scripts/build-provider-catalog.ts, scripts/certify-sources.ts |
 <!-- plan:results:D2-S2:end -->
 <!-- plan:stage:D2-S2:end -->
 
@@ -1024,4 +1030,190 @@ The catalog release includes the validated provider document and matches the fin
 - deviation D1-S2: packages/sdk/src/core/ai-model.ts: AiProviderDescriptorSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
 
 - close D1-S2 closed commit:938c793b267b5c9e1f2be0ee4f30c23c134152c9
+
+- record-result D2-S2 commit:1207995
+
+- deviation D2-S2: Selected emitted SDK contracts include shared TOML normalization and the existing Source deploymentScopedKeys helper lifted to its canonical SDK owner; host parser/reexport caller refinements are included with D1-S3. No second runtime parser or credentials store is introduced.
+
+- deviation D2-S2: Necessary catalog data compatibility refinements preserve former OpenAI/TypeSafe display names and prices and declare the two native GitHub descriptors so Settings excludes native auth through metadata instead of provider-name branches. Source certification build validates declarations before packaging.
+
+- close D2-S2 closed commit:1207995c7a9a95f5ad4b12488341cc65f8b82197
+
+- record-result D1-S3 commit:7289d0595
+
+- deviation D1-S3: Necessary caller refinements include the shared SDK manifest schemas, existing module manifest parser and ExtensionService readiness/admission notifications. Sources/provider target selection and removal of legacy runtime fallback continue in D1-S4; the coordinator already enforces encryption, atomic writes and independent-target continuation.
+
+- deviation D1-S3: Existing transaction tests now use the real AppSettingsRepository rather than memory maps so application saves exercise locks and metadata atomically. Role-specific facade fixtures and the canonical reasoning fixture were updated; documented the existing reuse map and module ownership. No schema migration or new settings store was needed.
+
+- deviation D1-S3: Implementation type not listed in SPEC: PersistedConfigurationState in backend/src/services/app-settings/app-settings.repository.ts
+
+- deviation D1-S3: Implementation type not listed in SPEC: DeclaredConfigurationTarget in backend/src/services/settings/declared-configuration.ts
+
+- deviation D1-S3: Implementation type not listed in SPEC: ConfigurationSeedResult in backend/src/services/settings/declared-configuration.ts
+
+- deviation D1-S3: Implementation type not listed in SPEC: TransportTestState in backend/test/harness/transport-state.ts
+
+- deviation D1-S3: backend/src/services/app-settings/app-settings.repository.ts: ConfigurationStateSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S3: backend/src/services/app-settings/app-settings.repository.ts: PersistedConfigurationState is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S3: backend/src/services/settings/declared-configuration.ts: DeclaredConfigurationTarget is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S3: backend/src/services/settings/declared-configuration.ts: ConfigurationSeedResult is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S3: backend/src/services/sources/runtime/source-protocol.adapter.ts: re-export needs canonical source verification. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S3: backend/test/harness/transport-state.ts: TransportTestState is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S3: packages/sdk/src/index.ts: re-export needs canonical source verification. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S3 closed commit:7289d05955c0bd5a3b63444ce5e6044e9dcdc86d
+
+- record-result D1-S4 commit:d7bd895d8
+
+- deviation D1-S4: Source startup and settings refresh reuse existing composition callbacks; preservation of legacy clear receipts required transactional plaintext backfill and old admin-write metadata. Pure identity helper required moving the exact no-network audit allowlist; current owning docs updated. No approved behavior change.
+
+- deviation D1-S4: Implementation type not listed in SPEC: DeclaredConfigurationTarget in backend/src/services/settings/declared-configuration.ts
+
+- deviation D1-S4: Implementation type not listed in SPEC: SourceManifest in backend/src/services/sources/runtime/source-host.server.ts
+
+- deviation D1-S4: backend/src/agent/models/provider-keys.ts: backfillPlaintextToVault is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/settings/declared-configuration.ts: DeclaredConfigurationTarget is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/auth/source-auth.operation.ts: resolveClientId is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-host.server.ts: SourceManifest is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-host.server.ts: prepareSourceArtifact is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-host.server.ts: buildPool is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-host.server.ts: fetchDeploymentOverrides is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-protocol.adapter.ts: resolveAppCredsWithVault is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-protocol.adapter.ts: resolveAppCred was removed or moved; record its destination or reason. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S4: backend/src/services/sources/runtime/source-protocol.adapter.ts: sourceUnavailableReason is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S4 closed commit:d7bd895d84c44f76e02766705b648eacd648bdee
+
+- record-result D1-S5 commit:1393cd4a1
+
+- deviation D1-S5: The existing llm_call Drizzle declaration is in backend/src/db/schema/agent.ts rather than the inventory's billing.ts; updated its nullable columns, expression index and checks with the SQL migration. Required compatibility propagation included SDK ledger RPC counter nullability, transport binding, constructor fixtures and JSONB key inventory; no new ledger/queue or promised behavior change.
+
+- deviation D1-S5: Implementation type not listed in SPEC: LlmCallRow in backend/src/agent/billing/billing-ledger.ts
+
+- deviation D1-S5: Implementation type not listed in SPEC: BillingLedger in backend/src/agent/billing/billing-ledger.ts
+
+- deviation D1-S5: Implementation type not listed in SPEC: CreditStore in backend/src/agent/credits/types.ts
+
+- deviation D1-S5: backend/src/agent/billing/billing-ledger.ts: LlmCallRow is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: backend/src/agent/billing/billing-ledger.ts: BillingLedger is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: backend/src/agent/billing/billing.repository.helpers.ts: CALL_COLUMNS is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: backend/src/agent/credits/types.ts: CreditStore is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: backend/src/core/llm-call.ts: AiCallReportContext needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: backend/src/core/llm-call.ts: AiCallReportContextSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: packages/sdk/src/core/ai-model.ts: AiUsageStatusSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: packages/sdk/src/core/ai-model.ts: AiUsageStatus needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: packages/sdk/src/core/ai-model.ts: AiCostStatusSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: packages/sdk/src/core/ai-model.ts: AiCostStatus needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: packages/sdk/src/core/ai-model.ts: AiBillingModeSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S5: packages/sdk/src/core/ai-model.ts: AiBillingMode needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S5 closed commit:1393cd4a119259eb606d65b6acaec88a7b7f919e
+
+- record-result D1-S6 commit:408f67cf6
+
+- deviation D1-S6: Required implementation refinements include existing native runtime shell and DI, backend partial AgentTurnAccounting projection, shared pricing helper, SDK fixtures and compile-only isolated smoke DI. Lifecycle, subscription authentication, existing central ledger/spool and shared smoke settings remain as approved.
+
+- deviation D1-S6: AccountedUsage.providerUsageRaw and DecisionModel.evaluate callback are backend-internal evidence refinements verified through compiler and real fixtures. Public receipt contracts follow SPEC. Reproduced false planctl classification of module exports as library API and repaired established private-executable boundary detection in the owned tooling branch; 89 focused tests, typecheck, lint and the actual rejected diff pass. Public package conflicts and required removals remain blocking.
+
+- deviation D1-S6: Implementation type not listed in SPEC: UsageEvidence in backend/src/agent/models/ai-accounting.mapper.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: AiPhysicalCall in backend/src/agent/models/ai-accounting.mapper.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: PrepareAiPhysicalCall in backend/src/agent/models/ai-accounting.mapper.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: ResolvedAiModelBinding in backend/src/agent/models/types.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: NativeTurnReporting in backend/src/agent/runtime/native-agent.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: NativeAgentEvent in backend/src/agent/runtime/native-agent.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: AiCallOperationContext in backend/src/core/ai-runtime.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: AiStreamTextOptions in backend/src/core/ai-runtime.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: EmbeddingRuntime in backend/src/core/ai-runtime.ts
+
+- deviation D1-S6: Implementation type not listed in SPEC: DecisionCallOptions in backend/src/core/ai-runtime.ts
+
+- deviation D1-S6: backend/src/agent/models/ai-accounting.mapper.ts: AccountedUsage changes providerUsageRaw beyond its approved shape; record the internal application refinement and verify its callers. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/ai-accounting.mapper.ts: mapLanguageUsage was removed or moved; record its destination or reason. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/ai-accounting.mapper.ts: accountingReceipt was removed or moved; record its destination or reason. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/ai-accounting.mapper.ts: UsageEvidence is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/ai-accounting.mapper.ts: AiPhysicalCall is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/ai-accounting.mapper.ts: PrepareAiPhysicalCall is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/types.ts: ResolvedAiModelBinding is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/models/types.ts: DecisionModel changes evaluate beyond its approved shape; record the internal application refinement and verify its callers. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/runtime/native-agent-execution.ts: prepareNativeAgentExecution is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/runtime/native-agent.ts: NativeAgentEvent is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/agent/runtime/native-agent.ts: NativeTurnReporting is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/core/ai-runtime.ts: AiCallOperationContext is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/core/ai-runtime.ts: AiStreamTextOptions is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/core/ai-runtime.ts: EmbeddingRuntime is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/core/ai-runtime.ts: DecisionCallOptions is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: backend/src/core/ai-runtime.ts: AiRuntime is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S6: packages/sdk/src/core/ai-model.ts: AiCallAccountingSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S6 closed commit:408f67cf6db354d86ea866420b5db0f466ca59cb
+
+- record-result D1-S7 commit:071d9e1fd
+
+- deviation D1-S7: Existing agent_turn both-or-neither check contradicted independently nullable approved final metrics. Added a migration and matching Drizzle nonnegative check, plus real subscription-zero persistence regression. Existing turn metadata records accounting provenance; generated JSONB key inventory refreshed. Changed files and proof from main implementation are in 1a6889f1e, followed by canonical client inheritance in this commit.
+
+- deviation D1-S7: Updated compiler-reported SDK exports, CLI canonical fixtures, minimal stale client harness methods and a projection helper parameter to their actual fields. Standalone client-core typecheck reports existing AgentChatStore.canonical.test.ts generic-mock/optional-index errors, unrelated to this change; owning backend/frontend product typechecks and all 138 client runtime tests pass. Affected documentation was reviewed and its provenance refreshed.
+
+- deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited evidence for episodeTitle. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited evidence for totalTokens. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited evidence for costMicros. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited evidence for usageCoverage. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited evidence for costCoverage. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited shape evidence for its parent. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S7 closed commit:071d9e1fd8b115439260765ecaa371fc99cd48fe
 <!-- plan:execution:end -->

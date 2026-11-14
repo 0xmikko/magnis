@@ -350,12 +350,30 @@ export const DecisionModelInfoSchema = AiLogicalModelAdminInfoSchema.pick({
     dataBoundary: true,
     providerConnectionId: true,
 }).extend({ available: z.boolean() }).strict();
+export const AiUsageStatusSchema = z.enum(["complete", "partial", "unreported", "legacy"]);
+export const AiCostStatusSchema = z.enum(["complete", "partial", "unreported", "legacy"]);
+export const AiBillingModeSchema = z.enum(["metered", "subscription", "local", "legacy"]);
 export const AiCallAccountingSchema = z.object({
-    modelId: z.string().min(1),
-    tokens: TokenBreakdownSchema,
-    totalTokens: z.number().int().nonnegative(),
-    costMicros: z.number().int().nonnegative(),
+    modelId: z.string().min(1), tokens: TokenBreakdownSchema.nullable(),
+    totalTokens: z.number().int().nonnegative().nullable(), costMicros: z.number().int().nonnegative().nullable(),
     status: z.enum(["complete", "failed", "aborted"]),
+    usageStatus: AiUsageStatusSchema, costStatus: AiCostStatusSchema, billingMode: AiBillingModeSchema,
+}).superRefine((receipt, context) => {
+    if ((receipt.tokens === null) !== (receipt.totalTokens === null) ||
+        (receipt.usageStatus === "complete" && receipt.tokens === null) ||
+        (receipt.usageStatus === "unreported" && receipt.tokens !== null))
+        context.addIssue({ code: "custom", message: "Usage evidence does not match token counters" });
+    if (receipt.tokens !== null && Object.values(receipt.tokens).reduce((sum, count) => sum + count, 0) !== receipt.totalTokens)
+        context.addIssue({ code: "custom", message: "Token dimensions do not match the reported total" });
+    if ((receipt.costStatus === "unreported" && receipt.costMicros !== null) ||
+        ((receipt.costStatus === "complete" || receipt.costStatus === "partial") && receipt.costMicros === null))
+        context.addIssue({ code: "custom", message: "Cost evidence does not match amount" });
+    if ((receipt.billingMode === "subscription" || receipt.billingMode === "local") &&
+        (receipt.costStatus !== "complete" || receipt.costMicros !== 0))
+        context.addIssue({ code: "custom", message: "Non-metered calls have known zero charge" });
+    if (receipt.status === "complete" && receipt.billingMode === "metered" &&
+        (receipt.usageStatus !== "complete" || receipt.costStatus !== "complete"))
+        context.addIssue({ code: "custom", message: "Metered completion requires complete evidence" });
 });
 export const OllamaLibraryFamilySchema = z.strictObject({
     id: z.string().min(1), name: z.string().min(1), description: z.string(),

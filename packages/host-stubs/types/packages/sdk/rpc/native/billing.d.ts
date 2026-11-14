@@ -14,11 +14,30 @@ export declare const billingContracts: {
             model: z.ZodString;
             startedAt: z.ZodString;
             finishedAt: z.ZodNullable<z.ZodString>;
-            inputTokens: z.ZodNumber;
-            outputTokens: z.ZodNumber;
-            cacheReadTokens: z.ZodNumber;
-            cacheWriteTokens: z.ZodNumber;
-            reasoningTokens: z.ZodNumber;
+            usageStatus: z.ZodEnum<{
+                complete: "complete";
+                partial: "partial";
+                unreported: "unreported";
+                legacy: "legacy";
+            }>;
+            costStatus: z.ZodEnum<{
+                complete: "complete";
+                partial: "partial";
+                unreported: "unreported";
+                legacy: "legacy";
+            }>;
+            billingMode: z.ZodEnum<{
+                legacy: "legacy";
+                metered: "metered";
+                subscription: "subscription";
+                local: "local";
+            }>;
+            cacheWriteOneHourTokens: z.ZodNullable<z.ZodNumber>;
+            inputTokens: z.ZodNullable<z.ZodNumber>;
+            outputTokens: z.ZodNullable<z.ZodNumber>;
+            cacheReadTokens: z.ZodNullable<z.ZodNumber>;
+            cacheWriteTokens: z.ZodNullable<z.ZodNumber>;
+            reasoningTokens: z.ZodNullable<z.ZodNumber>;
             costMicros: z.ZodNullable<z.ZodNumber>;
             status: z.ZodString;
             error: z.ZodNullable<z.ZodString>;

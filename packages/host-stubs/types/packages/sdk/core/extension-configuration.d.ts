@@ -633,4 +633,6 @@ export declare const ExtensionConfigurationManifestSchema: z.ZodPipe<z.ZodDiscri
  * otherwise labeled keys belong to a user account. Callers exclude minted keys. */
 export declare function deploymentScopedKeys(isSharedProvider: boolean, appCredKeys: readonly string[], labeled: readonly string[]): string[];
 export declare function assertSourceConfigurationScope(declaration: ExtensionConfigurationDeclaration, keys: readonly string[], minted: readonly string[], labeled: readonly string[], isSharedProvider: boolean): void;
+/** The established environment segment transformation; ownership is never reverse-parsed. */
+export declare function envSegment(value: string): string;
 //# sourceMappingURL=extension-configuration.d.ts.map

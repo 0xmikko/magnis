@@ -16,11 +16,17 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { checkDependencyGraph } from "./build-catalog-index";
+import { AiProviderCatalogDocumentSchema } from "../packages/host-stubs/types/packages/sdk/core/ai-model.js";
 
 const ROOT = join(import.meta.dir, "..");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SLUG = "owner/repo";
 const CI_WORKFLOW = join(ROOT, ".github", "workflows", "ci.yml");
+
+test("tst_provider_release_001 the published channel includes the provider document", () => {
+  const workflow = readFileSync(CI_WORKFLOW, "utf8").replace(/^\s*#.*$/gm, "");
+  expect(workflow).toContain("catalog/providers.json");
+});
 
 interface Entry {
   kind: string;
@@ -151,6 +157,15 @@ describe("tst_pub_catalog_index_001", () => {
     }
     first = build();
   }, 600_000);
+
+  test("tst_provider_release_002 provider metadata is a validated data asset beside installable packages", () => {
+    const document = AiProviderCatalogDocumentSchema.parse(JSON.parse(readFileSync(join(first.out, "providers.json"), "utf8")));
+    expect(document.schemaVersion).toBe(1);
+    expect(document.entries.length).toBeGreaterThan(0);
+    expect(first.index.packages.every(entry => entry.kind === "source" || entry.kind === "module")).toBe(true);
+    expect(readdirSync(first.out).filter(name => name.startsWith("provider__"))).toEqual([]);
+    expect(JSON.stringify(document)).not.toMatch(/"(?:apiKey|credentials|executable|command|code)"\s*:/);
+  });
 
   /**
    * @test-id: tst_cat_layout_002

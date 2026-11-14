@@ -65,3 +65,4 @@ export function buildHttpRequest(contract, value) {
     }
     return { method: contract.method, path, body: fields };
 }
+//# sourceMappingURL=contract.js.map

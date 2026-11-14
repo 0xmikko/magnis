@@ -26,7 +26,8 @@ case "$*" in
   'rev-parse --path-format=absolute --git-path code-production/publication.json') printf '%s.publication\\n' "$FIXTURE_RECEIPT" ;;
   'rev-parse HEAD') printf '%s\\n' "$FIXTURE_HEAD" ;;
   'rev-parse --path-format=absolute --git-path code-production/verify-pr.sha') printf '%s\\n' "$FIXTURE_RECEIPT" ;;
-  'diff --cached --name-only --diff-filter=ACMR -- docs/plans/*.md'|'ls-files docs/plans/*.md'|'diff --quiet'|'diff --cached --quiet'|'diff --cached --name-only -z --diff-filter=ACMRD') ;;
+  'diff --cached --name-only -z --diff-filter=ACMRD') if [ -n "$FIXTURE_CHANGED_PATH" ]; then printf '%s\\0' "$FIXTURE_CHANGED_PATH"; fi ;;
+  'diff --cached --name-only --diff-filter=ACMR -- docs/plans/*.md'|'ls-files docs/plans/*.md'|'diff --quiet'|'diff --cached --quiet') ;;
   *) printf 'unexpected fixture git: %s\\n' "$*" >&2; exit 97 ;;
 esac
 `, { mode: 0o755 });
@@ -38,7 +39,7 @@ if [ "$*" = 'run agent:verify:commit' ]; then
 fi
 `, { mode: 0o755 });
   return {
-    run(hook: string, branch = "feat/fixture", input = "") {
+    run(hook: string, branch = "feat/fixture", input = "", changedPath = "") {
       writeFileSync(calls, "");
       const result = spawnSync("bash", [join(root, ".githooks", hook)], {
         cwd: directory, input, encoding: "utf8", timeout: 10_000,
@@ -46,6 +47,7 @@ fi
           ...process.env, PATH: `${directory}:${process.env.PATH}`,
           FIXTURE_ROOT: root, FIXTURE_BRANCH: branch, FIXTURE_HEAD: head,
           FIXTURE_RECEIPT: receipt, FIXTURE_CALLS: calls, FIXTURE_BUN: process.execPath,
+          FIXTURE_CHANGED_PATH: changedPath,
         },
       });
       if (result.error) throw result.error;
@@ -78,6 +80,16 @@ test("tst_scripts_agent_stack_001 rejects protected commits and dispatches scope
     const accepted = f.run("pre-commit");
     expect(accepted.status).toBe(0);
     expect(accepted.calls).toEqual(["run agent:verify:docs", "run agent:verify:commit"]);
+  } finally { f.close(); }
+});
+
+test("tst_provider_release_003 provider data changes run canonical validation in the existing commit adapter", () => {
+  const f = fixture();
+  try {
+    const result = f.run("pre-commit", "feat/fixture", "", "providers/openai.toml");
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("verify: bun scripts/build-provider-catalog.ts");
+    expect(result.calls.some(call => call.includes("scripts/build-provider-catalog.test.ts"))).toBe(true);
   } finally { f.close(); }
 });
 

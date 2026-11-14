@@ -6,10 +6,16 @@ They contain no adapter code, credentials or personal account configuration.
 the application build. Several providers may use the same adapter.
 
 The existing catalog build writes a canonical, metadata-only `providers.json`.
+Both `plugins_dist/providers.json` and `catalog/providers.json` carry that same
+validated data; the normal channel publishes it beside the package indexes.
+Changing a file under `providers/` runs canonical validation through the existing
+commit adapter, and the complete catalog build validates it again.
+
 Its validators are generated from the host SDK by `scripts/gen-host-stubs.sh`
 with explicit `--sdk-contract` selectors for `core/ai-model` and
-`core/extension-configuration`;
-the backend uses its own SDK at runtime. The provider document is not an
+`core/extension-configuration`; the release also refreshes the related billing
+and Episode usage contracts from the same host checkout.
+The backend uses its own SDK at runtime. The provider document is not an
 installable Source/Module package and cannot load executable code.
 
 TOML omits nullable metadata because it has no null literal. Omitted endpoints,

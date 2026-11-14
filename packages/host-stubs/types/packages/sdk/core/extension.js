@@ -56,3 +56,4 @@ export const ExtensionCatalogRefreshResultSchema = z.union([
     }),
 ]);
 export const MagnisApiVersionSchema = z.string().regex(/^\d+\.\d+\.\d+$/);
+//# sourceMappingURL=extension.js.map

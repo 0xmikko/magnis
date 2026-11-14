@@ -41,4 +41,8 @@ export function assertSourceConfigurationScope(declaration, keys, minted, labele
         }
     }
 }
+/** The established environment segment transformation; ownership is never reverse-parsed. */
+export function envSegment(value) {
+    return value.toUpperCase().replaceAll("-", "_");
+}
 //# sourceMappingURL=extension-configuration.js.map

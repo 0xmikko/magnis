@@ -65,6 +65,10 @@ function commit(): void {
   const configs = new Set<string>();
   const tests = new Set<string>();
   const lint: string[] = [];
+  if (paths.some(path => path.startsWith("providers/"))) {
+    run("scripts/build-provider-catalog.ts");
+    tests.add("scripts/build-provider-catalog.test.ts");
+  }
   for (const path of paths) {
     if (/^(\.githooks\/|\.agents\/code-production\/)/.test(path) || path === "package.json") {
       tests.add(prepTest);

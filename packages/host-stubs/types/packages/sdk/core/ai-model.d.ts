@@ -1262,22 +1262,61 @@ export declare const DecisionModelInfoSchema: z.ZodObject<{
     available: z.ZodBoolean;
 }, z.core.$strict>;
 export type DecisionModelInfo = z.output<typeof DecisionModelInfoSchema>;
+export declare const AiUsageStatusSchema: z.ZodEnum<{
+    complete: "complete";
+    partial: "partial";
+    unreported: "unreported";
+    legacy: "legacy";
+}>;
+export type AiUsageStatus = z.output<typeof AiUsageStatusSchema>;
+export declare const AiCostStatusSchema: z.ZodEnum<{
+    complete: "complete";
+    partial: "partial";
+    unreported: "unreported";
+    legacy: "legacy";
+}>;
+export type AiCostStatus = z.output<typeof AiCostStatusSchema>;
+export declare const AiBillingModeSchema: z.ZodEnum<{
+    legacy: "legacy";
+    metered: "metered";
+    subscription: "subscription";
+    local: "local";
+}>;
+export type AiBillingMode = z.output<typeof AiBillingModeSchema>;
 export declare const AiCallAccountingSchema: z.ZodObject<{
     modelId: z.ZodString;
-    tokens: z.ZodObject<{
+    tokens: z.ZodNullable<z.ZodObject<{
         input: z.ZodNumber;
         output: z.ZodNumber;
         cacheRead: z.ZodNumber;
         cacheWrite: z.ZodNumber;
         cacheWriteOneHour: z.ZodNumber;
         reasoning: z.ZodNumber;
-    }, z.core.$strict>;
-    totalTokens: z.ZodNumber;
-    costMicros: z.ZodNumber;
+    }, z.core.$strict>>;
+    totalTokens: z.ZodNullable<z.ZodNumber>;
+    costMicros: z.ZodNullable<z.ZodNumber>;
     status: z.ZodEnum<{
         complete: "complete";
         failed: "failed";
         aborted: "aborted";
+    }>;
+    usageStatus: z.ZodEnum<{
+        complete: "complete";
+        partial: "partial";
+        unreported: "unreported";
+        legacy: "legacy";
+    }>;
+    costStatus: z.ZodEnum<{
+        complete: "complete";
+        partial: "partial";
+        unreported: "unreported";
+        legacy: "legacy";
+    }>;
+    billingMode: z.ZodEnum<{
+        legacy: "legacy";
+        metered: "metered";
+        subscription: "subscription";
+        local: "local";
     }>;
 }, z.core.$strip>;
 export type AiCallAccounting = z.output<typeof AiCallAccountingSchema>;

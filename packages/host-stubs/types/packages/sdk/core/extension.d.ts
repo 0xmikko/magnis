@@ -1,16 +1,16 @@
 import { z } from "zod";
 export declare const extensionKinds: readonly ["module", "source", "skill"];
 export declare const ExtensionKindSchema: z.ZodEnum<{
-    source: "source";
     module: "module";
+    source: "source";
     skill: "skill";
 }>;
 export type ExtensionKind = z.output<typeof ExtensionKindSchema>;
 export declare const extensionLifecycleStates: readonly ["available", "installed_disabled", "active", "activation_failed"];
 export declare const ExtensionLifecycleStateSchema: z.ZodEnum<{
-    active: "active";
     available: "available";
     installed_disabled: "installed_disabled";
+    active: "active";
     activation_failed: "activation_failed";
 }>;
 export type ExtensionLifecycleState = z.output<typeof ExtensionLifecycleStateSchema>;
@@ -23,8 +23,8 @@ export declare const ExtensionUiDescriptorSchema: z.ZodObject<{
 export type ExtensionUiDescriptor = z.output<typeof ExtensionUiDescriptorSchema>;
 export declare const ExtensionViewSchema: z.ZodObject<{
     kind: z.ZodEnum<{
-        source: "source";
         module: "module";
+        source: "source";
         skill: "skill";
     }>;
     id: z.ZodString;
@@ -37,9 +37,9 @@ export declare const ExtensionViewSchema: z.ZodObject<{
     docsUrl: z.ZodOptional<z.ZodString>;
     version: z.ZodString;
     state: z.ZodEnum<{
-        active: "active";
         available: "available";
         installed_disabled: "installed_disabled";
+        active: "active";
         activation_failed: "activation_failed";
     }>;
     stateReason: z.ZodOptional<z.ZodString>;
@@ -64,8 +64,8 @@ export type ExtensionView = z.output<typeof ExtensionViewSchema>;
 export declare const ExtensionListResultSchema: z.ZodObject<{
     extensions: z.ZodArray<z.ZodObject<{
         kind: z.ZodEnum<{
-            source: "source";
             module: "module";
+            source: "source";
             skill: "skill";
         }>;
         id: z.ZodString;
@@ -78,9 +78,9 @@ export declare const ExtensionListResultSchema: z.ZodObject<{
         docsUrl: z.ZodOptional<z.ZodString>;
         version: z.ZodString;
         state: z.ZodEnum<{
-            active: "active";
             available: "available";
             installed_disabled: "installed_disabled";
+            active: "active";
             activation_failed: "activation_failed";
         }>;
         stateReason: z.ZodOptional<z.ZodString>;

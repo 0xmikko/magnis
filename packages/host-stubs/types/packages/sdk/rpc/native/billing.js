@@ -1,3 +1,4 @@
+import { AiUsageStatusSchema, AiCostStatusSchema, AiBillingModeSchema } from "../../core/ai-model.js";
 import { z } from "zod";
 import { BillingLimitInfoSchema } from "../../http/system-settings.js";
 import { defineRpcContract } from "../contract.js";
@@ -19,11 +20,15 @@ export const billingContracts = {
                 model: z.string(),
                 startedAt: z.string(),
                 finishedAt: z.string().nullable(),
-                inputTokens: z.number().int(),
-                outputTokens: z.number().int(),
-                cacheReadTokens: z.number().int(),
-                cacheWriteTokens: z.number().int(),
-                reasoningTokens: z.number().int(),
+                usageStatus: AiUsageStatusSchema,
+                costStatus: AiCostStatusSchema,
+                billingMode: AiBillingModeSchema,
+                cacheWriteOneHourTokens: z.number().int().nullable(),
+                inputTokens: z.number().int().nullable(),
+                outputTokens: z.number().int().nullable(),
+                cacheReadTokens: z.number().int().nullable(),
+                cacheWriteTokens: z.number().int().nullable(),
+                reasoningTokens: z.number().int().nullable(),
                 costMicros: z.number().int().nullable(),
                 status: z.string(),
                 error: z.string().nullable(),
@@ -40,3 +45,4 @@ export const billingContracts = {
         output: BillingLimitInfoSchema,
     }),
 };
+//# sourceMappingURL=billing.js.map

@@ -49,8 +49,8 @@ export declare const VerifiedAuthSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodLiteral<"apiKey">;
     keyFrom: z.ZodEnum<{
-        vault: "vault";
         env: "env";
+        vault: "vault";
     }>;
     subject: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -58,4 +58,17 @@ export declare const VerifiedAuthSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     subject: z.ZodString;
 }, z.core.$strip>], "kind">;
 export type VerifiedAuth = z.output<typeof VerifiedAuthSchema>;
+/** Private Source auth result: only the host credential lifecycle consumes
+ * this value. It is never a user tool result or an account status payload. */
+export declare const SourceCredentialRefreshResultSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    kind: z.ZodLiteral<"current">;
+}, z.core.$strict>, z.ZodObject<{
+    kind: z.ZodLiteral<"rotated">;
+    credential: z.ZodString;
+    identity: z.ZodObject<{
+        key: z.ZodString;
+        label: z.ZodString;
+    }, z.core.$strict>;
+}, z.core.$strict>], "kind">;
+export type SourceCredentialRefreshResult = z.output<typeof SourceCredentialRefreshResultSchema>;
 //# sourceMappingURL=source-auth.d.ts.map
