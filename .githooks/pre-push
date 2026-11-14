@@ -8,10 +8,27 @@ PLANCTL="$ROOT/.agents/code-production/runtime/planctl.ts"
 # main and the integration branch move only through the owner's merge: every
 # such ref is refused before any receipt is consulted.
 BASE="$(git -C "$ROOT" config --get code-production.base || true)"
+CONTROLLED="$(git -C "$ROOT" rev-parse --path-format=absolute --git-path code-production/publication-required)"
+PUBLICATION="$(git -C "$ROOT" rev-parse --path-format=absolute --git-path code-production/publication.json)"
+PLAN_ONLY=false
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
-  if [[ "$remote_ref" == "refs/heads/main" || ( -n "$BASE" && "$remote_ref" == "refs/heads/$BASE" ) ]]; then
+  if [[ "$remote_ref" == "refs/heads/main" || "$remote_ref" == "refs/heads/staging" || ( -n "$BASE" && "$remote_ref" == "refs/heads/$BASE" ) ]]; then
     echo "direct push to ${remote_ref#refs/heads/} is not allowed — ${remote_ref#refs/heads/} moves only via a reviewed PR." >&2
     exit 1
+  fi
+  if [ -f "$CONTROLLED" ]; then
+    PHASE="$(bun -e '
+      const [path, sha, ref, remote] = process.argv.slice(1);
+      let p;
+      try { p = await Bun.file(path).json(); } catch { process.exit(1); }
+      if (p.state !== "publishing" || p.head !== sha || "refs/heads/" + p.branch !== ref ||
+          p.remote !== remote || !Number.isFinite(p.expiresAt) || p.expiresAt < Date.now()) process.exit(1);
+      console.log(p.phase);
+    ' "$PUBLICATION" "$_local_sha" "$remote_ref" "${1:-origin}")" || {
+      echo "pre-push: publish this approved work through planctl publish_delivery; no fresh publication intent matches this ref." >&2
+      exit 1
+    }
+    [ "$PHASE" != "plan" ] || PLAN_ONLY=true
   fi
 done
 
@@ -19,6 +36,11 @@ while IFS= read -r plan; do
   [ -n "$plan" ] || continue
   bun "$PLANCTL" verify "$plan"
 done < <(git -C "$ROOT" ls-files 'docs/plans/*.md' | grep -v 'docs/plans/README.md$' || true)
+
+# The MCP publisher proved that workflows exclude this exact plan-only change.
+if [ "$PLAN_ONLY" = true ]; then
+  exit 0
+fi
 
 if ! git -C "$ROOT" diff --quiet || ! git -C "$ROOT" diff --cached --quiet; then
   echo "pre-push: tracked worktree changes exist; commit them before verifying the published SHA" >&2

@@ -3,11 +3,15 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-GITDIR="$(git rev-parse --path-format=absolute --git-dir)"
+PLANS="$(git diff-tree --root --no-commit-id --name-only --diff-filter=ACM -r HEAD -- 'docs/plans/*.md')"
+[ -n "$PLANS" ] || exit 0
 
-# One journal per plan: the commit spends every journal whose candidate it carries.
-for JOURNAL in "$GITDIR"/plan-update-journal-*.json; do
-  [ -f "$JOURNAL" ] || continue
-  PLAN="$(bun -e 'const j = await Bun.file(process.argv[1]).json(); if (typeof j.plan !== "string") process.exit(2); console.log(j.plan)' "$JOURNAL")"
+# @tested-by: tst_agent_stack_016
+# Only this commit's plans can spend a journal. Other transactions may still
+# be open, or refer to an old plan that is no longer in the repository.
+while IFS= read -r PLAN; do
+  [ -n "$PLAN" ] || continue
   bun "$ROOT/.agents/code-production/runtime/planctl.ts" clear-transaction "$PLAN" --commit HEAD
-done
+done <<EOF
+$PLANS
+EOF

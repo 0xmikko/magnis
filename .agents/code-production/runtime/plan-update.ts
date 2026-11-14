@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, realpathSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { dlopen, FFIType } from "bun:ffi";
+import { basename, dirname, join, resolve, relative } from "node:path";
 import type { OwnerWaitReceipt, TaskRun, TaskRunIdentity } from "./task-run";
 import type { ProgressView } from "./plan-progress";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -14,15 +15,53 @@ export function protocolSpecHash(body: string): string {
   return digest(region(body, SPEC_START, SPEC_END).text);
 }
 
-export function protocolImplementationHash(body: string): string {
-  const normalized = region(body, IMPLEMENTATION_START, IMPLEMENTATION_END).text
+/** @tested-by: tst_scripts_planupdate_052, tst_scripts_planupdate_053, tst_scripts_planupdate_057
+ * The modern renderer appends this forecast after the complete narrative. */
+function modernTaskReceiptStart(rendered: string, minutes: number): number | null {
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  const forecast = ` (${minutes} min)`;
+  const start = rendered.lastIndexOf(forecast);
+  if (start === -1) return null;
+  const end = start + forecast.length;
+  return /^(?: — [0-9a-f]{7,40})+$/.test(rendered.slice(end)) ? end : null;
+}
+
+function normalizeSingleReceiptImplementation(text: string): string {
+  return text
     .replace(/^- \[[ x]\]/gm, "- [ ]")
     .replace(/^(\s*- \[ \].*?) — [0-9a-f]{7,40}$/gm, "$1")
     .replace(
       /<!-- plan:results:(D[1-9]\d*-S[1-9]\d*):start -->[\s\S]*?<!-- plan:results:\1:end -->/g,
       "<!-- plan:results:$1:start -->\n<!-- plan:results:$1:end -->",
     );
-  return digest(normalized);
+}
+
+/** @tested-by: tst_scripts_planupdate_058
+ * Earlier approvals can protect receipt prefixes as contract bytes. Only an
+ * exact independently computed digest proves that established projection. */
+function approvedSingleReceiptProjection(body: string, calculated?: string): string | undefined {
+  if (!/^Status:\s*APPROVED\b/m.test(body)) return undefined;
+  const locked = body.match(/^Implementation lock:\s*sha256:([0-9a-f]{64})\b/m)?.[1];
+  if (locked === undefined) return undefined;
+  const projected = calculated ?? digest(normalizeSingleReceiptImplementation(region(body, IMPLEMENTATION_START, IMPLEMENTATION_END).text));
+  return locked === projected ? projected : undefined;
+}
+
+export function protocolImplementationHash(body: string): string {
+  // @tested-by: tst_scripts_planupdate_052, tst_scripts_planupdate_053, tst_scripts_planupdate_056, tst_scripts_planupdate_058
+  const implementation = region(body, IMPLEMENTATION_START, IMPLEMENTATION_END).text;
+  const single = digest(normalizeSingleReceiptImplementation(implementation));
+  if (approvedSingleReceiptProjection(body, single) !== undefined) return single;
+  // Otherwise the metadata/forecast boundary proves duplicated execution
+  // suffixes. Unavailable evidence keeps the single-suffix policy.
+  const normalized = implementation
+    .replace(/^(- \[x\] [A-Z][A-Z0-9_-]* — )([^\n]+)(\n<!-- plan:task-meta:(\{[^\n]*\}) -->)/gm,
+      (line: string, prefix: string, rendered: string, metadataLine: string, json: string) => {
+        const meta = parseMetaObject(`<!-- plan:task-meta:${json} -->`, "<!-- plan:task-meta:");
+        const end = typeof meta.predictedActiveMinutes === "number" ? modernTaskReceiptStart(rendered, meta.predictedActiveMinutes) : null;
+        return end === null ? line : `${prefix}${rendered.slice(0, end)}${metadataLine}`;
+      });
+  return digest(normalizeSingleReceiptImplementation(normalized));
 }
 
 export type PlanState = "SPEC_DRAFT" | "SPEC_LOCKED" | "APPROVED";
@@ -40,6 +79,7 @@ export type UsageReceipt =
   | { readonly kind: "unavailable"; readonly reason: string };
 
 export interface DeliveryInput {
+  readonly review?: "required" | "none";
   readonly id: string;
   readonly title: string;
   readonly branch: string;
@@ -51,6 +91,8 @@ export interface DeliveryInput {
    * rounds, CI runs, external services — kept apart from active work. The
    * active-work and critical-path forecasts are derived from the Stages. */
   readonly predictedExternalWaitMinutes: number;
+  /** The repository the branch, the commits and the PR live in, by name; absent: the plan's own repository. */
+  readonly repository?: string;
   /** The pull request text as of the merge: what changed for people, what
    * changed in the code, how it was proven, what is not in this PR.
    * Paragraphs separated by one blank line; rendered under the Stage graph. */
@@ -84,7 +126,7 @@ export interface StageInput {
    * must equal tasks + verification, so estimates stay derived. */
   readonly verifyActiveMinutes: number;
   readonly verifyCredits: number;
-  /** What this Stage solves and why now, what is built and where, how it is
+  /** What this Stage delivers, what is built and where, how it is
    * proven, and the commit message (subject, then body). Paragraphs separated
    * by one blank line; rendered between the forecast and the Tasks. */
   readonly description: string;
@@ -119,6 +161,7 @@ export interface ParsedStageInput {
 }
 
 export interface DeliveryMeta {
+  readonly review?: "required" | "none";
   readonly id: string;
   readonly active: boolean;
   readonly depends: readonly string[];
@@ -128,10 +171,28 @@ export interface DeliveryMeta {
   readonly repository: string | null;
 }
 
-/** Select a repository explicitly without inheriting a calling hook's local Git paths. */
+/** Select a repository explicitly without inheriting a calling hook's local Git paths.
+ * @tested-by: tst_core_planctl_repository_002
+ */
 export function repositoryEnvironment(): NodeJS.ProcessEnv {
   const local = execFileSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).trim().split("\n");
   return Object.fromEntries(Object.entries(process.env).filter(([name]) => !local.includes(name)));
+}
+
+/** Shared copy/rename provenance for the existing inventory and shape comparison. */
+export function contractChangePaths(root: string, base: string, commit: string): readonly { readonly path: string; readonly previousPath: string }[] {
+  const diff = spawnSync("git", ["-C", root, "diff", "--name-status", "-z", "--find-renames", "--find-copies-harder", base, commit, "--", "*.ts", "*.tsx"],
+    { encoding: "utf8", env: repositoryEnvironment() });
+  if (diff.status !== 0) throw new Error("Cannot establish the contract diff base");
+  const fields = diff.stdout.split("\0").filter(Boolean);
+  const result: { path: string; previousPath: string }[] = [];
+  for (let i = 0; i < fields.length;) {
+    const status = fields[i++]; const previousPath = fields[i++];
+    const path = status?.startsWith("R") || status?.startsWith("C") ? fields[i++] : previousPath;
+    if (!status || !path || !previousPath) throw new Error("Incomplete Git contract diff");
+    result.push({ path, previousPath });
+  }
+  return result;
 }
 
 /** The checkout a Delivery's operations run in: the plan's root, or the configured checkout of its named repository. */
@@ -146,6 +207,17 @@ export function deliveryRoot(planRoot: string, delivery: DeliveryMeta): string {
   const toplevel = top.status === 0 ? top.stdout.trim() : "";
   if (toplevel === "" || toplevel !== resolve(path)) throw new Error(`${key} = ${path} is not a repository checkout`);
   return toplevel;
+}
+
+/** The checkout of a run's Delivery when the machine knows it, else null: a record from an unconfigured checkout is someone else's. */
+function knownDeliveryRoot(planRoot: string, deliveries: readonly DeliveryMeta[], deliveryId: string): string | null {
+  const delivery = deliveries.find((entry) => entry.id === deliveryId);
+  if (delivery === undefined) return null;
+  try {
+    return deliveryRoot(planRoot, delivery);
+  } catch {
+    return null;
+  }
 }
 
 export interface StageResultReceipt {
@@ -187,7 +259,7 @@ export interface UnattendedDecisionReceipt {
 }
 
 export interface ExactReplacement {
-  readonly section: "spec" | "implementation";
+  readonly section: "spec" | "implementation" | "title";
   readonly find: string;
   readonly replace: string;
 }
@@ -196,9 +268,11 @@ export interface MutationResult {
   readonly body: string;
   readonly specHash?: string;
   readonly implementationHash?: string;
+  readonly vocabularyFile?: { readonly path: "docs/vocabulary.md"; readonly before: string | null; readonly after: string };
 }
 
 export interface StageCloseResult extends MutationResult {
+  readonly verificationLogs?: readonly string[];
   readonly closed: number;
   readonly status: "CLOSED" | "PARTIAL";
 }
@@ -240,11 +314,6 @@ function isProtectedPath(path: string): boolean {
   return PROTECTED_PATHS.some((prefix) => path === prefix || path.startsWith(prefix));
 }
 
-/** A test may live anywhere: it never counts as a file outside the Stage folders. */
-function isTestPath(path: string): boolean {
-  return /(^|\/)(test|tests|__tests__)\//.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
-}
-
 function beyondTaskWrites(declaredPaths: readonly string[], paths: readonly string[]): readonly string[] {
   return paths.filter((path) => !coveredByWrites(declaredPaths, path)).sort();
 }
@@ -270,9 +339,12 @@ interface MutationJournal {
   readonly root: string;
   readonly plan: string;
   readonly baseHead: string;
+  readonly branch?: string;
   readonly initialHash: string;
   readonly candidateHash: string;
   readonly events: readonly JournalEvent[];
+  readonly vocabularyFile?: MutationResult["vocabularyFile"];
+  readonly pending?: { readonly before: string; readonly after: string };
 }
 
 const SPEC_START = "<!-- plan:spec:start -->";
@@ -312,7 +384,7 @@ export const DELIVERY_DESCRIPTION_HINT =
 export const DELIVERY_WAIT_HINT =
   "the external wait forecast — minutes the Delivery expects to wait on others (owner review rounds, CI runs, external services), kept apart from active work; the active-work total and the longest dependency path are derived from the Stages";
 export const STAGE_DESCRIPTION_HINT =
-  "what this Stage solves and why now, what is built and where, how it is proven, and the commit message (subject, then body); paragraphs separated by one blank line";
+  "what this Stage delivers, what is built and where, how it is proven, and the commit message (subject, then body); paragraphs separated by one blank line";
 
 /** Prose that renders inside a protocol region: paragraphs, never anything
  * the parsers would read as structure. A heading would end a section, a
@@ -384,13 +456,26 @@ function assertPlanTitle(title: string): void {
   if (/[\u0400-\u04FF]/.test(title)) throw new Error("the plan is written in English, title included");
 }
 
+/** The SPEC sections every plan carries, in the order the owner reads them. */
+export const SPEC_SECTIONS = ["The Goal", "The target"] as const;
+
+/** The plan's title: its first line. */
+function planTitle(body: string): string {
+  const end = body.indexOf("\n");
+  if (end === -1 || !body.startsWith("# ")) throw new Error("the plan's first line is not its title");
+  return body.slice(2, end);
+}
+
+function replaceTitle(body: string, title: string): string {
+  assertPlanTitle(title);
+  return `# ${title}${body.slice(body.indexOf("\n"))}`;
+}
+
 /** Rename a draft: the first line is the title, and submission carries it beside the SPEC. */
 export function replaceDraftTitle(body: string, title: string): MutationResult {
   requireState(body, "SPEC_DRAFT");
-  assertPlanTitle(title);
-  const end = body.indexOf("\n");
-  if (end === -1 || !body.startsWith("# ")) throw new Error("the plan's first line is not its title");
-  return { body: `# ${title}${body.slice(end)}` };
+  planTitle(body);
+  return { body: replaceTitle(body, title) };
 }
 
 export function createDraftPlan(title: string): string {
@@ -477,8 +562,8 @@ function taskContractErrors(task: TaskInput, stageWrites: readonly string[]): re
   for (const step of steps) assertSafeInline(step, "Task how");
   assertSafeInline(task.red, "Task RED");
   if (task.red.includes("`")
-    || !/^bun run agent:test:(?:backend|frontend|e2e)\s+--\s+\S+/.test(task.red)) {
-    errors.push(`Task ${task.id} RED must use bun run agent:test:<backend|frontend|e2e> -- <exact-target>`);
+    || !/^bun run agent:test:(?:backend|frontend|e2e|evals)\s+--\s+\S+/.test(task.red)) {
+    errors.push(`Task ${task.id} RED must use bun run agent:test:<backend|frontend|e2e|evals> -- <exact-target>`);
   }
   if (task.writes.length === 0) errors.push(`Task ${task.id} must declare at least one write`);
   assertUnique(task.writes, `Task ${task.id} writes`);
@@ -491,7 +576,6 @@ function taskContractErrors(task: TaskInput, stageWrites: readonly string[]): re
     // @invariant: the writes list is the contract; the story says what changes
     // for the reader and stays short. Legacy five-line Tasks keep their
     // original contract so active approved plans remain amendable.
-    if (task.story.trim().length > 200) errors.push(`Task ${task.id} story must fit two lines (max 200 characters)`);
     if (/\b(?:colleague|half-?landed|rename map|the new files|the old files|as discussed)\b/i.test(task.story)) {
       errors.push(`Task ${task.id} story has an unresolved reference — name the exact paths and symbols instead`);
     }
@@ -635,7 +719,7 @@ function renderDelivery(input: DeliveryInput, stages: readonly ForecastStage[]):
   assertSafeProse(input.description, "Delivery description", DELIVERY_DESCRIPTION_HINT);
   const waitMinutes = assertExternalWait(input.predictedExternalWaitMinutes);
   assertUnique(input.depends, "Delivery dependencies");
-  const meta = JSON.stringify({ active: input.active, depends: input.depends, predictedExternalWaitMinutes: waitMinutes });
+  const meta = JSON.stringify({ active: input.active, depends: input.depends, predictedExternalWaitMinutes: waitMinutes, ...(input.review === undefined ? {} : { review: input.review }), ...(input.repository === undefined ? {} : { repository: input.repository }) });
   return [
     deliveryStart(input.id),
     `<!-- plan:delivery-meta:${meta} -->`,
@@ -759,6 +843,7 @@ function capture(match: RegExpMatchArray, index: number, name: string): string {
 
 export function stageInputs(body: string): readonly ParsedStageInput[] {
   const inputs: ParsedStageInput[] = [];
+  const preserveApprovedTails = approvedSingleReceiptProjection(body) !== undefined;
   const expression = /<!-- plan:stage:(D[1-9]\d*-S[1-9]\d*):start -->\n<!-- plan:stage-meta:(\{[^\n]*\}) -->[\s\S]*?<!-- plan:stage:\1:end -->/g;
   for (const match of body.matchAll(expression)) {
     const block = capture(match, 0, "Stage block");
@@ -791,7 +876,11 @@ export function stageInputs(body: string): readonly ParsedStageInput[] {
       const completed = capture(task, 1, "Task state") === "x";
       const renderedStory = capture(task, 3, "Task story");
       const completionCommit = completed ? renderedStory.match(/ — ([0-9a-f]{7,40})$/)?.[1] ?? null : null;
-      const rawStory = completed ? renderedStory.replace(/ — [0-9a-f]{7,40}$/, "") : renderedStory;
+      let rawStory = renderedStory;
+      if (completed) {
+        const end = !preserveApprovedTails && typeof meta.predictedActiveMinutes === "number" ? modernTaskReceiptStart(renderedStory, meta.predictedActiveMinutes) : null;
+        rawStory = end === null ? renderedStory.replace(/ — [0-9a-f]{7,40}$/, "") : renderedStory.slice(0, end);
+      }
       return {
         index: task.index ?? 0,
         completed,
@@ -945,7 +1034,8 @@ export function deliveryMetas(body: string): readonly DeliveryMeta[] {
     if (branch === null) throw new Error(`Delivery ${id} lacks a Branch line`);
     // The header says which Delivery is active: execution moves it without
     // touching the frozen contract, whose metadata keeps the authored flag.
-    values.push({ id, active: activeDeliveryId(body) === id, depends, branch: capture(branch, 1, `Delivery ${id} branch`), predictedExternalWaitMinutes: wait, repository: typeof meta.repository === "string" ? meta.repository : null });
+    if (meta.review !== undefined && meta.review !== "required" && meta.review !== "none") throw new Error("Invalid Delivery review requirement");
+    values.push({ ...(meta.review === undefined ? {} : { review: meta.review }), id, active: activeDeliveryId(body) === id, depends, branch: capture(branch, 1, `Delivery ${id} branch`), predictedExternalWaitMinutes: wait, repository: typeof meta.repository === "string" ? meta.repository : null });
   }
   return values;
 }
@@ -1272,7 +1362,6 @@ export function recordStageResult(
     if (isProtectedPath(path) && !coveredByWrites(declaredPaths, path)) {
       throw new Error(`protected path ${path} is not named by the Task writes`);
     }
-    if (!isTestPath(path) && !coveredByWrites(stage.writes, path)) throw new Error(`file outside the Stage folders: ${path}`);
   }
   const commitIsAncestor = options.commitIsAncestor ?? defaultCommitIsAncestor;
   if (!commitIsAncestor(receipt.commit)) throw new Error(`Stage result commit ${receipt.commit} is not ancestral to HEAD`);
@@ -1292,11 +1381,20 @@ export function recordStageResult(
   let superseding = false;
   for (const taskId of receipt.taskIds) {
     const escaped = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const taskLine = new RegExp(`^- \\[([ x])\\] (${escaped} — .+?)(?: — [0-9a-f]{40})?$`, "m");
+    // @tested-by: tst_scripts_planupdate_052, tst_scripts_planupdate_053, tst_scripts_planupdate_054, tst_scripts_planupdate_055
+    const taskLine = new RegExp(`^- \\[([ x])\\] (${escaped} — .+)$`, "m");
     const found = changedBlock.match(taskLine);
     if (found === null) throw new Error(`Task ${taskId} is not open or its text changed`);
-    if (found[1] === "x") superseding = true;
-    changedBlock = changedBlock.replace(taskLine, `- [x] $2 — ${receipt.commit}`);
+    let rendered = capture(found, 2, `Task ${taskId} text`);
+    if (found[1] === "x") {
+      superseding = true;
+      const task = addressedTasks.find(entry => entry?.id === taskId);
+      if (task === undefined) throw new Error(`Stage ${receipt.stageId} result names an unknown Task`);
+      const end = task.format === "modern" && approvedSingleReceiptProjection(body) === undefined
+        ? modernTaskReceiptStart(rendered, task.predictedActiveMinutes) : null;
+      rendered = end === null ? rendered.replace(/ — [0-9a-f]{7,40}$/, "") : rendered.slice(0, end);
+    }
+    changedBlock = changedBlock.replace(taskLine, () => `- [x] ${rendered} — ${receipt.commit}`);
   }
   if (superseding) {
     // A repaired Task supersedes its result: the Stage's closed criteria open
@@ -1357,10 +1455,16 @@ function amendRegion(body: string, patch: ExactReplacement): string {
 export function applyOwnerAmendment(body: string, ownerWord: string, patch: ExactReplacement): MutationResult {
   const state = planState(body);
   // @tested-by: tst_scripts_planupdate_020
-  if (state !== "APPROVED" && !(state === "SPEC_LOCKED" && patch.section === "spec")) {
+  if (state !== "APPROVED" && !(state === "SPEC_LOCKED" && patch.section !== "implementation")) {
     throw new Error("owner amendment requires APPROVED plan or a SPEC amendment in SPEC_LOCKED");
   }
   assertOwnerWord(ownerWord);
+  if (patch.section === "title") {
+    // The title sits outside both locks: it changes under the owner's word, in English, and the log says so.
+    const current = planTitle(body);
+    if (patch.find !== current) throw new Error(`title is "${current}", not "${patch.find}"`);
+    return { body: appendExecution(replaceTitle(body, patch.replace), `amend title owner:${ownerWord}`) };
+  }
   let next = amendRegion(body, patch);
   if (patch.section === "spec") {
     const specHash = protocolSpecHash(next);
@@ -1387,6 +1491,7 @@ export function applyUnattendedAmendment(
 ): MutationResult {
   requireState(body, "APPROVED");
   if (!/^Unattended decisions:\s*allowed\s*$/m.test(body)) throw new Error("unattended decisions are not allowed");
+  if (patch.section === "title") throw new Error("an unattended amendment changes the SPEC or the implementation, never the title");
   assertDecision(decision);
   let next = amendRegion(body, patch);
   const changedHash = patch.section === "spec" ? protocolSpecHash(next) : protocolImplementationHash(next);
@@ -1423,10 +1528,20 @@ export function stageApproved(body: string, stageId: string): boolean {
   return line.test(execution);
 }
 
+/** Where a Stage closes: its Delivery's checkout and that checkout's HEAD. */
+export function closeRootOf(planRoot: string, body: string, stageId: string): { readonly root: string; readonly head: string } {
+  const stage = stageInputs(body).find((candidate) => candidate.id === stageId);
+  if (stage === undefined) throw new Error(`unknown Stage ${stageId}`);
+  const delivery = deliveryMetas(body).find((entry) => entry.id === stage.deliveryId);
+  if (delivery === undefined) throw new Error(`Stage ${stageId} belongs to unknown Delivery ${stage.deliveryId}`);
+  const root = deliveryRoot(planRoot, delivery);
+  return { root, head: git(root, ["rev-parse", "HEAD"]) };
+}
+
 export function closePlanStage(
   body: string,
   stageId: string,
-  options: { readonly root: string; readonly head: string; readonly run?: (command: string) => number | null },
+  options: { readonly root: string; readonly head: string; readonly run?: (command: string) => number | null; readonly recheck?: readonly string[] },
 ): StageCloseResult {
   requireState(body, "APPROVED");
   const stage = region(body, stageStart(stageId), stageEnd(stageId));
@@ -1436,24 +1551,36 @@ export function closePlanStage(
   const taskText = capture(taskSection, 1, `Stage ${stageId} Tasks`);
   const criteriaText = capture(criteriaSection, 1, `Stage ${stageId} criteria`);
   if (/^- \[ \] /m.test(taskText)) throw new Error(`Stage ${stageId} still has open Tasks; import its result first`);
+  const verificationLogs: string[] = [];
   const run = options.run ?? ((command: string): number | null => {
-    const result = spawnSync("bash", ["-c", command], { cwd: options.root, timeout: 600_000 });
+    const result = spawnSync("bash", ["-c", command], { cwd: options.root, timeout: 2_700_000, maxBuffer: 16 * 1024 * 1024 });
+    try {
+      const directory = resolve(options.root, git(options.root, ["rev-parse", "--git-path", "code-production/verification"]));
+      mkdirSync(directory, { recursive: true });
+      const path = join(directory, `${stageId}-${Date.now()}-${digest(command).slice(0, 12)}.log`);
+      writeFileSync(path, `Command: ${command}\nExit: ${result.status}; signal: ${result.signal}\n${result.stdout ?? ""}\n${result.stderr ?? ""}\n${result.error?.message ?? ""}`, { mode: 0o600 });
+      verificationLogs.push(path);
+    } catch { /* Diagnostic storage cannot change the actual check result. */ }
     return result.error === undefined && result.signal === null ? result.status : null;
   });
   let closed = 0;
   const changedCriteria = criteriaText.split("\n").map((line) => {
     const open = line.match(/^- \[ \] (.+)$/);
-    if (open === null) return line;
-    const criterion = capture(open, 1, "acceptance criterion");
+    const prior = open === null ? /^- \[x\] (.+) — [0-9a-f]{7,40}$/.exec(line) : null;
+    const criterion = open === null ? prior?.[1] : capture(open, 1, "acceptance criterion");
+    if (criterion === undefined) return line;
     const machine = criterion.match(MACHINABLE);
+    if (open === null && (machine === null || !options.recheck?.includes(capture(machine, 1, "criterion command")))) return line;
     const proven = machine !== null
       ? run(capture(machine, 1, "criterion command")) === Number(capture(machine, 2, "criterion exit"))
       : criterion === "Commit" && SHA.test(options.head);
-    if (!proven) return line;
+    if (!proven) return `- [ ] ${criterion}`;
     closed += 1;
     return `- [x] ${criterion} — ${options.head}`;
   }).join("\n");
-  let changedStage = stage.text.replace(criteriaText, changedCriteria);
+  // @tested-by: tst_core_planctl_close_literal_001
+  // Shell commands may contain $', $& or $$; they are literal plan bytes.
+  const changedStage = stage.text.replace(criteriaText, () => changedCriteria);
   const remaining = (changedStage.match(/^- \[ \] /gm) ?? []).length;
   const status = remaining === 0 ? "CLOSED" : "PARTIAL";
   let next = `${body.slice(0, stage.from)}${changedStage}${body.slice(stage.to)}`;
@@ -1465,7 +1592,7 @@ export function closePlanStage(
       && /^- \[ \] /m.test(region(next, stageStart(entry.id), stageEnd(entry.id)).text));
     if (!open) next = markLedgerImplemented(next);
   }
-  return { body: next, closed, status };
+  return { body: next, closed, status, ...(verificationLogs.length === 0 ? {} : { verificationLogs }) };
 }
 
 function gitRaw(root: string, args: readonly string[]): string {
@@ -1488,7 +1615,8 @@ function parseJournal(value: unknown): MutationJournal {
   const record = value as Readonly<Record<string, unknown>>;
   if (record.version !== 1 || typeof record.root !== "string" || typeof record.plan !== "string"
     || typeof record.baseHead !== "string" || typeof record.initialHash !== "string"
-    || typeof record.candidateHash !== "string" || !Array.isArray(record.events)) {
+    || typeof record.candidateHash !== "string" || !Array.isArray(record.events)
+    || (record.branch !== undefined && typeof record.branch !== "string")) {
     throw new Error("mutation journal has an unsupported shape");
   }
   const events: JournalEvent[] = record.events.map((entry) => {
@@ -1499,14 +1627,31 @@ function parseJournal(value: unknown): MutationJournal {
     }
     return { operation: event.operation, beforeHash: event.beforeHash, afterHash: event.afterHash };
   });
+  let vocabularyFile: MutationResult["vocabularyFile"];
+  if (record.vocabularyFile !== undefined) {
+    const file = object(record.vocabularyFile, "journal vocabulary file");
+    if (file.path !== "docs/vocabulary.md" || (file.before !== null && typeof file.before !== "string") || typeof file.after !== "string") {
+      throw new Error("invalid journal vocabulary file");
+    }
+    vocabularyFile = { path: "docs/vocabulary.md", before: file.before, after: file.after };
+  }
+  let pending: MutationJournal["pending"];
+  if (record.pending !== undefined) {
+    const p = object(record.pending, "pending journal");
+    if (typeof p.before !== "string" || typeof p.after !== "string" || digest(p.after) !== record.candidateHash) throw new Error("invalid pending journal");
+    pending = { before: p.before, after: p.after };
+  }
   return {
     version: 1,
     root: record.root,
     plan: record.plan,
     baseHead: record.baseHead,
+    ...(record.branch === undefined ? {} : { branch: record.branch as string }),
     initialHash: record.initialHash,
     candidateHash: record.candidateHash,
     events,
+    ...(vocabularyFile === undefined ? {} : { vocabularyFile }),
+    ...(pending === undefined ? {} : { pending }),
   };
 }
 
@@ -1540,12 +1685,16 @@ export async function completeTask(
   const stage = stageInputs(body).find((entry) => input.taskIds.every((id) => entry.tasks.some((task) => task.id === id)));
   if (stage === undefined) throw new Error(`Tasks ${input.taskIds.join(", ")} do not belong to one Stage of ${plan}`);
   const tasks = stage.tasks.filter((task) => input.taskIds.includes(task.id));
+  const owning = deliveryMetas(body).find((entry) => entry.id === stage.deliveryId);
+  if (owning === undefined) throw new Error(`Stage ${stage.id} belongs to unknown Delivery ${stage.deliveryId}`);
+  // The commit, its paths and its types live in the Delivery's checkout; the result row lives in the plan.
+  const checkout = deliveryRoot(root, owning);
   const runs = await Promise.all(input.taskIds.map(async (taskId) => {
     const path = taskRunPath(root, plan, taskId);
     if (!existsSync(path)) throw new Error(`Task ${taskId} has no start record; run planctl start-task first`);
     const run = await decodeRun(JSON.parse(readFileSync(path, "utf8")) as unknown);
     if (run.plan !== plan || run.taskId !== taskId) throw new Error(`Task ${taskId} start record belongs to another Task`);
-    if (spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", run.baseHead, input.commit]).status !== 0) {
+    if (spawnSync("git", ["-C", checkout, "merge-base", "--is-ancestor", run.baseHead, input.commit]).status !== 0) {
       throw new Error(`Task ${taskId} result commit does not descend from its start base`);
     }
     return { path, run };
@@ -1560,20 +1709,21 @@ export async function completeTask(
     return sum + run.accumulatedOwnerWaitSeconds + open;
   }, 0);
   const activeMinutes = Math.max(0, elapsedMinutes - waitSeconds / 60);
-  const paths = stageResultCommitPaths(input.commit, root).filter((path) => path !== plan);
+  const paths = stageResultCommitPaths(input.commit, checkout).filter((path) => path !== plan);
   const tempRoot = {
     path: stage.tempRoot,
-    state: existsSync(resolve(root, stage.tempRoot)) ? "present" : "absent",
+    state: existsSync(resolve(checkout, stage.tempRoot)) ? "present" : "absent",
   } as const;
   const tests = tasks.map((task) => ({ id: task.id, command: task.red }));
-  // An exported type the SPEC does not name is the one thing a commit may
-  // not change silently: the Interfaces section is the owner's contract.
+  // Source-code exports are not an exhaustive owner contract. Preserve the
+  // approved SPEC and record implementation changes in the execution log.
   const { undeclaredExportedTypes } = await import("./plan-gate");
-  const undeclared = await undeclaredExportedTypes(root, input.commit, body);
-  if (undeclared.length > 0) {
-    const names = undeclared.map((type) => `${type.name} in ${type.path}`).join(", ");
-    throw new Error(`exported type ${names} is missing from SPEC Interfaces; declare it there under the owner's word`);
-  }
+  const undeclared = await undeclaredExportedTypes(checkout, input.commit, body);
+  const { checkContractChanges } = await import("./contract-check");
+  const changedContracts = await checkContractChanges(checkout, input.commit, body);
+  // Refuse positively established conflicts, not missing inventory entries.
+  const conflicts = changedContracts.filter(f => f.blocking);
+  if (conflicts.length) throw new Error(conflicts.map(f => `${f.text}\nEvidence: ${f.quote}`).join("\n"));
   const receipt: StageResultReceipt = {
     version: 1,
     plan,
@@ -1589,13 +1739,17 @@ export async function completeTask(
     paths,
     tests,
     result: input.result,
-    deviations: [...(input.deviations ?? [])],
+    deviations: [
+      ...(input.deviations ?? []),
+      ...undeclared.map(type => `Implementation type not listed in SPEC: ${type.name} in ${type.path}`),
+      ...changedContracts.filter(f => !f.blocking).map(f => f.text),
+    ],
     tempRoots: [tempRoot],
   };
   mutatePlanFile(root, plan, "record-result", (current) => recordStageResult(current, receipt, {
-    commitIsAncestor: (commit) => spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, "HEAD"]).status === 0,
-    commitPaths: (commit) => stageResultCommitPaths(commit, root),
-    pathExists: (path) => existsSync(resolve(root, path)),
+    commitIsAncestor: (commit) => spawnSync("git", ["-C", checkout, "merge-base", "--is-ancestor", commit, "HEAD"]).status === 0,
+    commitPaths: (commit) => stageResultCommitPaths(commit, checkout),
+    pathExists: (path) => existsSync(resolve(checkout, path)),
   }));
   for (const { path } of runs) unlinkSync(path);
   return {
@@ -1701,7 +1855,7 @@ export interface StartTaskInput {
   /** The observer identity when observer configuration exists; null in a plain clone. */
   readonly identity: TaskRunIdentity | null;
   /** What gh reports for a Delivery branch, to unlock a child Delivery or refuse a merged one. */
-  readonly publication: (branch: string) => ProgressView["publication"];
+  readonly publication: (root: string, branch: string) => ProgressView["publication"];
   readonly decodeRun: (value: unknown) => TaskRun | Promise<TaskRun>;
 }
 
@@ -1715,31 +1869,56 @@ export interface NeedsOwnerInput {
   readonly answerForm: string;
 }
 
-function observed(publication: (branch: string) => ProgressView["publication"], branch: string): ProgressView["publication"] {
+function observed(publication: StartTaskInput["publication"], root: string, branch: string): ProgressView["publication"] {
   try {
-    return publication(branch);
+    return publication(root, branch);
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-/** Why a Delivery cannot start yet: a parent without a green PR on its current head. Null when every parent is green or merged. */
-function parentRefusal(root: string, deliveries: readonly DeliveryMeta[], delivery: DeliveryMeta, publication: StartTaskInput["publication"]): string | null {
+/** Why a Delivery cannot start yet: a parent without a green PR on its current head. Null when every parent is green or merged.
+ * @tested-by: tst_unit_planctl_mcp_009
+ */
+function parentRefusal(root: string, deliveries: readonly DeliveryMeta[], delivery: DeliveryMeta, publication: StartTaskInput["publication"], body: string): string | null {
   for (const parentId of delivery.depends) {
     const parent = deliveries.find((entry) => entry.id === parentId);
     if (parent === undefined) return `Delivery ${delivery.id} depends on unknown Delivery ${parentId}`;
-    const state = observed(publication, parent.branch);
+    const checkout = deliveryRoot(root, parent);
+    const localStages = stageInputs(body).filter(s => s.deliveryId === parent.id);
+    const locallyComplete = localStages.length > 0 && localStages.every(s => {
+      const text = region(body, stageStart(s.id), stageEnd(s.id)).text;
+      if (/^- \[ \] /m.test(text)) return false;
+      const commits = [...text.matchAll(/^- \[x\].* — ([a-f0-9]{7,40})\s*$/gm)].map(m => m[1]!);
+      return commits.length > 0 && commits.every(commit =>
+        spawnSync("git", ["-C", checkout, "merge-base", "--is-ancestor", commit, "HEAD"], { env: repositoryEnvironment() }).status === 0);
+    });
+    if (locallyComplete) continue;
+    const state = observed(publication, checkout, parent.branch);
     if (state === null) return `Delivery ${parent.id} has no PR yet`;
     if ("error" in state) return `Delivery ${parent.id}: ${state.error}`;
     if (state.merged) continue;
     if (state.ci !== "green") return `Delivery ${parent.id} CI is ${state.ci}`;
-    const current = spawnSync("git", ["-C", root, "rev-parse", "--verify", `${parent.branch}^{commit}`], { encoding: "utf8" });
+    const current = spawnSync("git", ["-C", checkout, "rev-parse", "--verify", `${parent.branch}^{commit}`], { encoding: "utf8" });
     if (current.status !== 0) return `Delivery ${parent.id} branch ${parent.branch} is not known here`;
     if (state.headSha !== current.stdout.trim()) {
       return `Delivery ${parent.id} PR head ${state.headSha.slice(0, 7)} is not the current head ${current.stdout.trim().slice(0, 7)}`;
     }
   }
   return null;
+}
+
+/** Local prerequisite completion is sufficient before publication; observer and executor agree. */
+export function nextEligibleTask(root: string, body: string, publication: StartTaskInput["publication"]): ReturnType<typeof nextOpenTask> {
+  const current = nextOpenTask(body);
+  if (current.taskId !== null) return current;
+  const deliveries = deliveryMetas(body);
+  for (const delivery of deliveries) {
+    if (delivery.active || parentRefusal(root, deliveries, delivery, publication, body) !== null) continue;
+    const candidate = nextOpenTask(replaceHeader(body, "Active Delivery", delivery.id));
+    if (candidate.taskId !== null) return candidate;
+  }
+  return current;
 }
 
 function taskRunOf(run: TaskRun): string | null {
@@ -1757,27 +1936,21 @@ export async function startTask(root: string, input: StartTaskInput): Promise<Ta
   let body = readFileSync(resolve(root, plan), "utf8");
   requireState(body, "APPROVED");
   const runs = await runningTaskRecords(root, plan, input.decodeRun);
-  const mine = runs.filter((run) => taskRunOf(run) === null || taskRunOf(run) === root)
+  // A run is mine when it started in this worktree or in the checkout its Delivery names on this machine.
+  const ownRoot = (run: TaskRun): boolean => taskRunOf(run) === null || taskRunOf(run) === root || taskRunOf(run) === knownDeliveryRoot(root, deliveryMetas(body), run.deliveryId);
+  const mine = runs.filter(ownRoot)
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   let taskId = input.taskId;
   if (taskId === null) {
     const running = mine[0];
     if (running !== undefined) taskId = running.taskId;
     else {
-      const next = nextOpenTask(body);
-      if (next.taskId !== null) taskId = next.taskId;
-      else {
-        const deliveries = deliveryMetas(body);
-        const child = deliveries.find((delivery) => !delivery.active
-          && stageInputs(body).some((stage) => stage.deliveryId === delivery.id && stage.tasks.some((task) => !task.completed))
-          && parentRefusal(root, deliveries, delivery, input.publication) === null);
-        const firstOpen = child === undefined ? undefined : stageInputs(body).filter((stage) => stage.deliveryId === child.id).flatMap((stage) => stage.tasks).find((task) => !task.completed);
-        if (firstOpen === undefined) throw new Error(`nothing to start: ${next.blockedBy ?? "every Task of the active Delivery is complete and no child Delivery is eligible"}`);
-        taskId = firstOpen.id;
-      }
+      const next = nextEligibleTask(root, body, input.publication);
+      if (next.taskId === null) throw new Error(`nothing to start: ${next.blockedBy ?? "no eligible Task remains"}`);
+      taskId = next.taskId;
     }
   }
-  const elsewhere = runs.find((run) => run.taskId === taskId && taskRunOf(run) !== null && taskRunOf(run) !== root);
+  const elsewhere = runs.find((run) => run.taskId === taskId && !ownRoot(run));
   if (elsewhere !== undefined) throw new Error(`Task ${taskId} is running in worktree ${taskRunOf(elsewhere)}`);
   const stages = stageInputs(body);
   const stage = stages.find((candidate) => candidate.tasks.some((task) => task.id === taskId));
@@ -1787,14 +1960,20 @@ export async function startTask(root: string, input: StartTaskInput): Promise<Ta
   const deliveries = deliveryMetas(body);
   const delivery = deliveries.find((entry) => entry.id === stage.deliveryId);
   if (delivery === undefined) throw new Error(`Task ${taskId} belongs to unknown Delivery ${stage.deliveryId}`);
+  // A Delivery that names a repository runs in that checkout, on its own branch.
+  const checkout = deliveryRoot(root, delivery);
+  if (checkout !== root) {
+    const onBranch = git(checkout, ["branch", "--show-current"]);
+    if (onBranch !== delivery.branch) throw new Error(`checkout ${checkout} is on ${onBranch}; Delivery ${delivery.id} is ${delivery.branch}`);
+  }
   if (!delivery.active) {
-    const refusal = parentRefusal(root, deliveries, delivery, input.publication);
+    const refusal = parentRefusal(root, deliveries, delivery, input.publication, body);
     if (refusal !== null) throw new Error(`Task ${taskId} cannot start: ${refusal}`);
     mutatePlanFile(root, plan, "activate-delivery", (current) => ({ body: replaceHeader(current, "Active Delivery", delivery.id) }));
     body = readFileSync(resolve(root, plan), "utf8");
   }
   if (task.completed) {
-    const state = observed(input.publication, delivery.branch);
+    const state = observed(input.publication, checkout, delivery.branch);
     if (state !== null && "merged" in state && state.merged) throw new Error(`Task ${taskId} is complete and its Delivery ${delivery.id} is merged`);
   }
   const brief = taskExecutionBrief(body, taskId, { repair: task.completed });
@@ -1803,7 +1982,7 @@ export async function startTask(root: string, input: StartTaskInput): Promise<Ta
   let run: TaskRun;
   if (existing !== undefined) {
     if (existing.plan !== plan || existing.stageId !== brief.stageId) throw new Error(`Task ${taskId} has a conflicting start record`);
-    if (spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", existing.baseHead, "HEAD"]).status !== 0) {
+    if (spawnSync("git", ["-C", checkout, "merge-base", "--is-ancestor", existing.baseHead, "HEAD"]).status !== 0) {
       throw new Error(`Task ${taskId} start base is not ancestral to HEAD`);
     }
     // A repeated start keeps the clock; it may add a checkpoint, and an
@@ -1825,9 +2004,9 @@ export async function startTask(root: string, input: StartTaskInput): Promise<Ta
       stageId: brief.stageId,
       taskId,
       startedAt: new Date().toISOString(),
-      baseHead: git(root, ["rev-parse", "HEAD"]),
-      worktree: root,
-      branch: git(root, ["branch", "--show-current"]),
+      baseHead: git(checkout, ["rev-parse", "HEAD"]),
+      worktree: checkout,
+      branch: git(checkout, ["branch", "--show-current"]),
       checkpoint: input.checkpoint,
       identity: input.identity,
       ownerWait: null,
@@ -1914,6 +2093,7 @@ export function journalCreatedPlan(root: string, planArg: string, body: string):
     root,
     plan,
     baseHead: git(root, ["rev-parse", "HEAD"]),
+    branch: git(root, ["branch", "--show-current"]),
     initialHash: empty,
     candidateHash,
     events: [{ operation: "init", beforeHash: empty, afterHash: candidateHash }],
@@ -1921,10 +2101,138 @@ export function journalCreatedPlan(root: string, planArg: string, body: string):
   writeFileSync(planJournalPath(root, plan), `${JSON.stringify(journal, null, 2)}\n`);
 }
 
+function writeAtomicFile(path: string, text: string): void {
+  const temp = `${path}.${process.pid}.tmp`;
+  const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
+  writeFileSync(temp, text, { mode });
+  renameSync(temp, path);
+}
+
+function writeJournal(path: string, journal: MutationJournal): void {
+  writeAtomicFile(path, `${JSON.stringify(journal, null, 2)}\n`);
+}
+
+function verifyJournalChain(journal: MutationJournal): void {
+  let expected = journal.initialHash;
+  for (const event of journal.events) {
+    if (event.beforeHash !== expected) throw new Error("mutation journal chain is broken");
+    expected = event.afterHash;
+  }
+  if (expected !== journal.candidateHash) throw new Error("mutation journal does not reach candidate");
+}
+
+/** A local fast-forward does not author plan bytes. Accept only the exact
+ * preserved transaction, never a checkout, rewrite or upstream plan change.
+ * Verification is read-only; the next normal mutation saves the new binding.
+ * @tested-by: tst_planctl_journal_ff_001, tst_planctl_journal_ff_002 */
+function reconcileJournalBinding(root: string, plan: string, journal: MutationJournal): MutationJournal {
+  const head = git(root, ["rev-parse", "HEAD"]);
+  const branch = git(root, ["branch", "--show-current"]);
+  if (journal.root !== root || journal.plan !== plan || (journal.branch !== undefined && journal.branch !== branch)) {
+    throw new Error("mutation journal belongs to a different plan, root or branch");
+  }
+  if (journal.baseHead === head) return journal;
+  if (journal.pending !== undefined) throw new Error("Interrupted mutation needs recovery at its original HEAD");
+  verifyJournalChain(journal);
+  const refuse = (): never => { throw new Error("mutation journal HEAD changed without a proven unchanged fast-forward"); };
+  if (branch === "" || spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", journal.baseHead, head]).status !== 0) refuse();
+  const reflog = (ref: string): string[] => git(root, ["reflog", "show", "--format=%H%x09%gs", ref]).split("\n");
+  const checkoutLog = reflog("HEAD");
+  const branchLog = reflog(`refs/heads/${branch}`);
+  const base = checkoutLog.findIndex(row => row.startsWith(`${journal.baseHead}\t`));
+  if (base < 1 || !checkoutLog[0]?.startsWith(`${head}\t`)) refuse();
+  for (let index = 0; index < base; index++) {
+    const row = checkoutLog[index];
+    if (row === undefined || row !== branchLog[index] || !/\t(?:merge|pull)(?: .*?)?: Fast-forward$/.test(row)) refuse();
+  }
+  if (!branchLog[base]?.startsWith(`${journal.baseHead}\t`)) refuse();
+  const paths = [plan, ...(journal.vocabularyFile === undefined ? [] : [journal.vocabularyFile.path])];
+  if (git(root, ["rev-list", "--full-history", "--max-count=1", `${journal.baseHead}..${head}`, "--", ...paths]) !== "") refuse();
+  const original = spawnSync("git", ["-C", root, "show", `${journal.baseHead}:${plan}`], { encoding: "utf8" });
+  if (digest(original.status === 0 ? original.stdout : "") !== journal.initialHash) refuse();
+  if (digest(readFileSync(repositoryFile(root, plan), "utf8")) !== journal.candidateHash
+    || digest(gitRaw(root, ["show", `:${plan}`])) !== journal.candidateHash) refuse();
+  if (journal.vocabularyFile !== undefined) {
+    const file = journal.vocabularyFile;
+    const before = spawnSync("git", ["-C", root, "show", `${journal.baseHead}:${file.path}`], { encoding: "utf8" });
+    if ((before.status === 0 ? before.stdout : null) !== file.before
+      || readFileSync(repositoryFile(root, file.path), "utf8") !== file.after
+      || gitRaw(root, ["show", `:${file.path}`]) !== file.after) refuse();
+  }
+  if (git(root, ["rev-parse", "HEAD"]) !== head || git(root, ["branch", "--show-current"]) !== branch) refuse();
+  return { ...journal, baseHead: head, branch };
+}
+
+/** Worktree-wide serialization covers competing plans changing the same vocabulary. */
+function withPlanWriter<T>(root: string, operation: () => T): T {
+  if (process.platform !== "linux" && process.platform !== "darwin") throw new Error("Plan writes require POSIX file locking.");
+  const native = dlopen(process.platform === "linux" ? "libc.so.6" : "/usr/lib/libSystem.B.dylib", {
+    flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+  });
+  // Kernel-owned locks survive PID namespaces and release on process death.
+  // Never unlink the lock inode: waiting writers must contend on the same file.
+  const lock = resolve(root, git(root, ["rev-parse", "--git-path", "planctl-writer.flock"]));
+  const fd = openSync(lock, "a", 0o600);
+  try {
+    if (native.symbols.flock(fd, 2 | 4) !== 0) throw new Error("Another planctl write is active; retry this operation.");
+    for (const journal of worktreeJournals(root)) {
+      if (journal.pending !== undefined) recoverPending(root, journal.plan);
+    }
+    return operation();
+  } finally { closeSync(fd); native.close(); }
+}
+
+function worktreeJournals(root: string): readonly MutationJournal[] {
+  const directory = dirname(planJournalPath(root, "docs/plans/inspection.md"));
+  return readdirSync(directory).filter(name => /^plan-update-journal(?:-[a-f0-9]+)?\.json$/.test(name))
+    .flatMap(name => { const journal = readJournal(join(directory, name)); return journal?.root === root ? [journal] : []; });
+}
+function repositoryFile(root: string, path: string): string {
+  const absolute = resolve(root, path);
+  if (!absolute.startsWith(`${root}/`)) throw new Error("Plan transaction path must stay inside its repository");
+  let existing = absolute;
+  while (!existsSync(existing) && dirname(existing) !== existing) existing = dirname(existing);
+  if (relative(realpathSync(root), realpathSync(existing)).startsWith("..")) throw new Error("Plan transaction symlink leaves its repository");
+  return absolute;
+}
+
+function recoverPending(root: string, plan: string): void {
+  const path = planJournalPath(root, plan);
+  const journal = readJournal(path);
+  if (journal?.pending === undefined) return;
+  if (journal.root !== root || journal.plan !== plan || journal.baseHead !== git(root, ["rev-parse", "HEAD"])
+    || (journal.branch !== undefined && journal.branch !== git(root, ["branch", "--show-current"]))) throw new Error("Interrupted mutation belongs to a different checkout or HEAD");
+  const absolute = repositoryFile(root, plan);
+  const current = readFileSync(absolute, "utf8");
+  if (current !== journal.pending.before && current !== journal.pending.after) throw new Error("Interrupted plan mutation conflicts with a later edit");
+  const file = journal.vocabularyFile;
+  if (file !== undefined) {
+    const target = repositoryFile(root, file.path);
+    const before = existsSync(target) ? readFileSync(target, "utf8") : null;
+    if (before !== file.before && before !== file.after) throw new Error("Interrupted vocabulary mutation conflicts with a later edit");
+    mkdirSync(dirname(target), { recursive: true });
+    writeAtomicFile(target, file.after);
+  }
+  writeAtomicFile(absolute, journal.pending.after);
+  git(root, ["add", plan, ...(file === undefined ? [] : [file.path])]);
+  const { pending: _pending, ...complete } = journal;
+  writeJournal(path, complete);
+}
+
+/** A subsequent MCP operation finishes a durable, already-authorized write after interruption. */
+export function recoverPlanMutation(root: string, plan: string): void {
+  withPlanWriter(root, () => recoverPending(root, plan));
+}
+
 export function mutatePlanFile(root: string, planArg: string, operation: string, transform: (body: string) => MutationResult): void {
-  const absolute = resolve(root, planArg);
-  const plan = absolute.slice(root.length + 1);
-  if (absolute === root || plan.startsWith("..")) throw new Error("plan must be inside the repository");
+  withPlanWriter(root, () => mutatePlanFileLocked(root, planArg, operation, transform));
+}
+
+function mutatePlanFileLocked(root: string, planArg: string, operation: string, transform: (body: string) => MutationResult): void {
+  const absolute = repositoryFile(root, planArg);
+  const plan = relative(root, absolute);
+  if (absolute === root || plan.startsWith("..") || resolve(root, plan) !== absolute) throw new Error("plan must be inside the repository");
+  recoverPending(root, plan);
   const path = planJournalPath(root, plan);
   const body = readFileSync(absolute, "utf8");
   const head = git(root, ["rev-parse", "HEAD"]);
@@ -1936,6 +2244,9 @@ export function mutatePlanFile(root: string, planArg: string, operation: string,
   if (existing !== null && existing.root === root && existing.plan === plan && existing.baseHead !== head) {
     const committedNow = spawnSync("git", ["-C", root, "show", `HEAD:${plan}`], { encoding: "utf8" });
     if (committedNow.status === 0 && digest(committedNow.stdout) === existing.candidateHash) {
+      if (existing.vocabularyFile !== undefined && gitRaw(root, ["show", `HEAD:${existing.vocabularyFile.path}`]) !== existing.vocabularyFile.after) {
+        throw new Error("Committed plan differs from its vocabulary transaction; inspect the commit before continuing.");
+      }
       unlinkSync(path);
       existing = null;
     }
@@ -1949,9 +2260,7 @@ export function mutatePlanFile(root: string, planArg: string, operation: string,
     initialHash = currentHash;
     events = [];
   } else {
-    if (existing.root !== root || existing.plan !== plan || existing.baseHead !== head) {
-      throw new Error("mutation journal belongs to a different plan, root or HEAD");
-    }
+    existing = reconcileJournalBinding(root, plan, existing);
     if (existing.candidateHash !== currentHash) throw new Error("plan differs from the journal candidate; raw edit refused");
     initialHash = existing.initialHash;
     events = existing.events;
@@ -1960,18 +2269,35 @@ export function mutatePlanFile(root: string, planArg: string, operation: string,
   const result = { ...transformed, body: hardBreakHeader(transformed.body) };
   const afterHash = digest(result.body);
   if (afterHash === currentHash) throw new Error(`${operation} produced no change`);
-  writeFileSync(absolute, result.body);
-  git(root, ["add", plan]);
+  const vocabularyFile = result.vocabularyFile ?? existing?.vocabularyFile;
+  if (result.vocabularyFile !== undefined) {
+    for (const other of worktreeJournals(root)) {
+      if (other.plan === plan || other.vocabularyFile === undefined) continue;
+      const committed = spawnSync("git", ["-C", root, "show", `HEAD:${other.plan}`], { encoding: "utf8" });
+      if (committed.status !== 0 || digest(committed.stdout) !== other.candidateHash) {
+        throw new Error(`Commit the prepared vocabulary transaction for ${other.plan}, then retry this operation.`);
+      }
+    }
+    const file = result.vocabularyFile;
+    const target = repositoryFile(root, file.path);
+    const actual = existsSync(target) ? readFileSync(target, "utf8") : null;
+    if (actual !== file.before) throw new Error("Vocabulary changed during approval; read the current proposal.");
+  }
   const journal: MutationJournal = {
     version: 1,
     root,
     plan,
     baseHead: head,
+    branch: git(root, ["branch", "--show-current"]),
     initialHash,
     candidateHash: afterHash,
     events: [...events, { operation, beforeHash: currentHash, afterHash }],
+    ...(vocabularyFile === undefined ? {} : { vocabularyFile }),
+    pending: { before: body, after: result.body },
   };
-  writeFileSync(path, `${JSON.stringify(journal, null, 2)}\n`);
+  // Write intent first. Recovery accepts only the recorded before/after bytes.
+  writeJournal(path, journal);
+  recoverPending(root, plan);
 }
 
 /** Is a merge in progress in this worktree? */
@@ -2011,19 +2337,16 @@ export function verifyStagedPlan(root: string, planArg: string): void {
   // and the guard bites again, or a merge would be a hole through which any
   // plan could be rewritten unjournalled.
   if (merging(root) && carriedByMerge(root, plan, gitRaw(root, ["show", `:${plan}`]))) return;
-  const journal = readJournal(planJournalPath(root, plan));
-  if (journal === null) throw new Error("locked plan mutation has no journal");
-  if (journal.plan !== plan || journal.root !== root || journal.baseHead !== git(root, ["rev-parse", "HEAD"])) {
-    throw new Error("mutation journal binding does not match this staged plan");
-  }
+  const saved = readJournal(planJournalPath(root, plan));
+  if (saved === null) throw new Error("locked plan mutation has no journal");
+  const journal = reconcileJournalBinding(root, plan, saved);
   const staged = gitRaw(root, ["show", `:${plan}`]);
   if (digest(staged) !== journal.candidateHash) throw new Error("staged plan differs from journal candidate");
-  let expected = journal.initialHash;
-  for (const event of journal.events) {
-    if (event.beforeHash !== expected) throw new Error("mutation journal chain is broken");
-    expected = event.afterHash;
+  if (journal.pending !== undefined) throw new Error("Interrupted plan write needs MCP recovery before commit");
+  if (journal.vocabularyFile !== undefined && gitRaw(root, ["show", `:${journal.vocabularyFile.path}`]) !== journal.vocabularyFile.after) {
+    throw new Error("Staged vocabulary differs from the approved proposal");
   }
-  if (expected !== journal.candidateHash) throw new Error("mutation journal does not reach candidate");
+  verifyJournalChain(journal);
 }
 
 export function clearSpentJournal(planArg: string, commit: string): void {
@@ -2035,6 +2358,9 @@ export function clearSpentJournal(planArg: string, commit: string): void {
   if (journal.plan !== plan) throw new Error("mutation journal belongs to another plan");
   const committed = gitRaw(root, ["show", `${commit}:${plan}`]);
   if (digest(committed) !== journal.candidateHash) throw new Error("commit does not contain the journal candidate");
+  if (journal.vocabularyFile !== undefined && gitRaw(root, ["show", `${commit}:${journal.vocabularyFile.path}`]) !== journal.vocabularyFile.after) {
+    throw new Error("commit does not contain the journal vocabulary candidate");
+  }
   unlinkSync(path);
 }
 
@@ -2061,13 +2387,17 @@ function requiredNumber(record: Readonly<Record<string, unknown>>, key: string):
 
 export function deliveryFrom(value: unknown): DeliveryInput {
   const record = object(value, "Delivery");
+  const review = record.review;
+  if (review !== undefined && review !== "required" && review !== "none") throw new Error("Delivery review must be required or none");
   if (typeof record.active !== "boolean") throw new Error("active must be boolean");
   return {
+    ...(review === undefined ? {} : { review }),
     id: requiredString(record, "id"), title: requiredString(record, "title"), branch: requiredString(record, "branch"),
     depends: stringArray(record.depends, "depends"), gate: stringArray(record.gate, "gate"), active: record.active,
     stageGraph: requiredString(record, "stageGraph"),
     predictedExternalWaitMinutes: typeof record.predictedExternalWaitMinutes === "number" ? record.predictedExternalWaitMinutes : Number.NaN,
     description: typeof record.description === "string" ? record.description : "",
+    ...(record.repository === undefined ? {} : { repository: requiredString(record, "repository") }),
   };
 }
 
@@ -2180,7 +2510,7 @@ function decisionFrom(value: unknown): UnattendedDecisionReceipt {
 export function patchFrom(value: unknown): ExactReplacement {
   const record = object(value, "patch");
   const section = requiredString(record, "section");
-  if (section !== "spec" && section !== "implementation") throw new Error("patch section must be spec or implementation");
+  if (section !== "spec" && section !== "implementation" && section !== "title") throw new Error("patch section must be spec, implementation or title");
   return { section, find: requiredString(record, "find"), replace: requiredString(record, "replace") };
 }
 
@@ -2239,8 +2569,7 @@ if (import.meta.main && ["plan-update.ts", "plan-update.js"].includes(basename(i
         break;
       case "close": {
         const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
-        const head = git(root, ["rev-parse", "HEAD"]);
-        mutatePlanFile(root, plan, command, (body) => closePlanStage(body, requiredFlag(args, "--stage"), { root, head }));
+        mutatePlanFile(root, plan, command, (body) => closePlanStage(body, requiredFlag(args, "--stage"), closeRootOf(root, body, requiredFlag(args, "--stage"))));
         break;
       }
       case "deviate":

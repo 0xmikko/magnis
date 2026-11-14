@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source": "dltxperts/0_agents",
-  "commit": "b2e338ca7341b43ae7366f633da1e667e0b17e9b",
+  "commit": "ab61f0829a1e56bdddbf4bcbd444ead55d4df6ff",
   "ci": {
     "kind": "external",
     "workflow": ".github/workflows/ci.yml"
@@ -10,16 +10,11 @@
     ".agents/code-production/runtime/planctl.ts",
     ".agents/code-production/runtime/plan-update.ts",
     ".agents/code-production/runtime/plan-gate.ts",
+    ".agents/code-production/runtime/plan-history.ts",
     ".agents/code-production/runtime/vocabulary.md",
     ".agents/code-production/runtime/retro-register.ts",
     ".githooks/pre-commit",
     ".githooks/pre-push",
-    ".githooks/post-commit",
-    ".claude/skills/blueprint/SKILL.md",
-    ".agents/skills/blueprint/SKILL.md",
-    ".claude/skills/blueprint-start/SKILL.md",
-    ".agents/skills/blueprint-start/SKILL.md",
-    ".claude/skills/end-work/SKILL.md",
-    ".agents/skills/end-work/SKILL.md"
+    ".githooks/post-commit"
   ]
 }

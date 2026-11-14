@@ -107,6 +107,10 @@ dependency path are derived from the Stages and rendered as one "Forecast:"
 line under the Stage graph, recomputed on every put-stage, frozen by
 approve-plan and compared against the Stage Results afterwards.
 
+"repository" names the repository a Delivery lives in when it is not the
+plan's own; the checkout is one config line on the machine,
+git config code-production.repository.<name> <path>. Absent: this repository.
+
 "description" is the pull request text as of the merge, in plain language:
 what changed for people, what changed in the code, how it was proven, what is
 not in this PR. Paragraphs separated by one blank line (\\n\\n in JSON). It
@@ -274,6 +278,8 @@ Checks that staged plan bytes are exactly the script-produced journal head.
   "clear-transaction": `Usage: planctl clear-transaction <plan.md> --commit <sha>
 
 Internal post-commit cleanup for a spent mutation journal.
+MCP callers do not run this command: the next plan write automatically
+reconciles a journal whose candidate is already committed at HEAD.
 `,
   config: `Usage: planctl config <init|check> --role <machine|server> [--path <absolute.toml>]
 
@@ -486,6 +492,7 @@ async function serverProgress(args: readonly string[]): Promise<{
 
 async function progress(args: readonly string[]): Promise<void> {
   dedicatedRuntime();
+  const { z } = await import("zod");
   const render = await import("./render");
   if (args.includes("--server")) {
     try {
@@ -521,7 +528,7 @@ async function progress(args: readonly string[]): Promise<void> {
   const progressCore = await import("../core/plan-progress");
   const view = await progressCore.planProgress(rootPath, {
     plan: explicit,
-    publication: (branch) => readPublication(rootPath, branch),
+    publication: (checkout: string, branch: string) => readPublication(checkout, branch, z),
     sourceCommit: git(dirname(import.meta.path), "rev-parse", "HEAD"),
     decodeRun: taskRunFrom,
   });
@@ -579,6 +586,7 @@ async function observerIdentity(args: readonly string[], rootPath: string, body:
 }
 
 async function startTask(args: readonly string[]): Promise<void> {
+  const { z } = await import("zod");
   const { rootPath, target, body } = approvedPlan(args);
   const identity = await observerIdentity(args, rootPath, body);
   const brief: TaskBrief = await startTaskOperation(rootPath, {
@@ -586,7 +594,7 @@ async function startTask(args: readonly string[]): Promise<void> {
     taskId: optionalFlag(args, "--task") ?? null,
     checkpoint: optionalFlag(args, "--checkpoint") ?? null,
     identity,
-    publication: (branch: string) => readPublication(rootPath, branch),
+    publication: (checkout: string, branch: string) => readPublication(checkout, branch, z),
     decodeRun: taskRunFrom,
   });
   const render = await import("./render");
@@ -599,6 +607,7 @@ async function startTask(args: readonly string[]): Promise<void> {
 /** Serve the tools over stdio; diagnostics go to stderr, the protocol owns stdout. */
 async function mcp(args: readonly string[]): Promise<void> {
   dedicatedRuntime();
+  const { z } = await import("zod");
   const { createPlanctlServer, toolNames } = await import("../mcp/server");
   if (args.includes("--tools")) {
     console.log(toolNames().join("\n"));
@@ -609,9 +618,9 @@ async function mcp(args: readonly string[]): Promise<void> {
   const { eventLogPath } = await import("../core/event-log");
   const server = createPlanctlServer({
     cwd: process.cwd(),
-    publication: readPublication,
+    publication: (checkout: string, branch: string) => readPublication(checkout, branch, z),
     sourceCommit: git(dirname(import.meta.path), "rev-parse", "HEAD"),
-    eventLog: eventLogPath(homedir()),
+    eventLog: optionalFlag(args, "--event-log") ?? eventLogPath(homedir()),
     publisher: commandPublisher(optionalFlag(args, "--publisher") ?? "mdurl"),
   });
   const transport = new StdioServerTransport();
@@ -626,7 +635,7 @@ async function stats(args: readonly string[]): Promise<void> {
   const { eventLogPath, readEvents, renderStats, stats: tablesOf } = await import("../core/event-log");
   const since = optionalFlag(args, "--since") ?? "1970-01-01T00:00:00.000Z";
   if (!Number.isFinite(Date.parse(since))) throw new Error("--since must be an ISO date");
-  console.log(renderStats(tablesOf(readEvents(eventLogPath(homedir()), since))));
+  console.log(renderStats(tablesOf(readEvents(optionalFlag(args, "--event-log") ?? eventLogPath(homedir()), since))));
 }
 
 function questionOption(value: string): { readonly label: string; readonly consequence: string } {
@@ -670,32 +679,53 @@ async function resumeTask(args: readonly string[]): Promise<void> {
     : `Task ${taskId} RESUMED\nCleared owner wait: ${resumed.marker.context}`);
 }
 
-/** What gh reports for a Delivery branch: the PR, its CI on the current head, the last run. */
-function readPublication(rootPath: string, branch: string): import("../core/plan-progress").ProgressView["publication"] {
+/** What gh reports for a Delivery branch: the PR, its Actions CI on the current head, the last run.
+ * @tested-by: tst_scripts_planctl_014
+ */
+function readPublication(rootPath: string, branch: string, z: typeof import("zod").z): import("../core/plan-progress").ProgressView["publication"] {
   const gh = (...ghArgs: readonly string[]): string => {
     const result = spawnSync("gh", ghArgs, { cwd: rootPath, encoding: "utf8" });
     if (result.error !== undefined) throw new Error(result.error.message);
     if (result.status !== 0) throw new Error(result.stderr.trim() || `gh ${ghArgs[0]} exited ${result.status}`);
     return result.stdout;
   };
-  const pulls: unknown = JSON.parse(gh("pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "url,headRefOid,mergedAt,statusCheckRollup"));
-  if (!Array.isArray(pulls) || pulls.length === 0) return null;
-  const pull = pulls[0] as Readonly<Record<string, unknown>>;
-  if (typeof pull.url !== "string" || typeof pull.headRefOid !== "string") throw new Error("gh pr list returned no url or head");
-  const checks = Array.isArray(pull.statusCheckRollup) ? pull.statusCheckRollup as readonly Readonly<Record<string, unknown>>[] : [];
-  const conclusions = checks.map((check) => `${check.conclusion ?? check.state ?? ""}`.toUpperCase());
-  const ci = conclusions.some((value) => ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"].includes(value))
+  const pulls = z.array(z.object({ url: z.string(), headRefOid: z.string(), mergedAt: z.string().nullable() })).parse(
+    JSON.parse(gh("pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "url,headRefOid,mergedAt")),
+  );
+  const pull = pulls[0];
+  if (pull === undefined) return null;
+  const pages = z.array(z.object({ workflow_runs: z.array(z.object({
+    id: z.number().int().positive(),
+    workflow_id: z.number().int().positive(),
+    event: z.string(),
+    head_sha: z.string(),
+    status: z.string(),
+    conclusion: z.string().nullable(),
+    run_attempt: z.number().int().positive(),
+  })) })).parse(JSON.parse(gh("api", "--method", "GET", "repos/{owner}/{repo}/actions/runs",
+    "-f", `head_sha=${pull.headRefOid}`, "-f", `branch=${branch}`, "-f", "per_page=100", "--paginate", "--slurp")));
+  const seen = new Set<string>();
+  const runs = pages.flatMap((page) => page.workflow_runs)
+    .filter((run) => run.head_sha === pull.headRefOid)
+    .sort((left, right) => right.id - left.id)
+    .filter((run) => {
+      const key = `${run.workflow_id}:${run.event}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  const passed = new Set(["success", "skipped", "neutral"]);
+  const ci = runs.some((run) => run.status === "completed" && run.conclusion !== null && !passed.has(run.conclusion))
     ? "red"
-    : conclusions.length > 0 && conclusions.every((value) => ["SUCCESS", "SKIPPED", "NEUTRAL"].includes(value)) ? "green" : "pending";
-  const runs: unknown = JSON.parse(gh("run", "list", "--branch", branch, "--commit", pull.headRefOid, "--limit", "1", "--json", "databaseId,attempt"));
-  const run = Array.isArray(runs) && runs.length > 0 ? runs[0] as Readonly<Record<string, unknown>> : null;
+    : runs.length > 0 && runs.every((run) => run.status === "completed" && run.conclusion !== null && passed.has(run.conclusion)) ? "green" : "pending";
+  const run = runs[0];
   return {
     prUrl: pull.url,
     ci,
     headSha: pull.headRefOid,
-    runId: run === null ? "" : String(run.databaseId),
-    attempt: run !== null && typeof run.attempt === "number" ? run.attempt : 0,
-    merged: typeof pull.mergedAt === "string",
+    runId: run === undefined ? "" : String(run.id),
+    attempt: run === undefined ? 0 : run.run_attempt,
+    merged: pull.mergedAt !== null,
   };
 }
 
@@ -763,7 +793,8 @@ async function completeTask(args: readonly string[]): Promise<number> {
     if (run.plan !== target.relative || run.taskId === "" || !receipt.taskIds.includes(run.taskId)) {
       throw new Error("Task start receipt does not match the Stage result");
     }
-    if (spawnSync("git", ["-C", rootPath, "merge-base", "--is-ancestor", run.baseHead, receipt.commit]).status !== 0) {
+    // The record names the checkout the Task ran in; the commit is judged there.
+    if (spawnSync("git", ["-C", run.version === 3 ? run.worktree : rootPath, "merge-base", "--is-ancestor", run.baseHead, receipt.commit]).status !== 0) {
       throw new Error(`Task ${run.taskId} result commit does not descend from its start base`);
     }
   }
@@ -805,10 +836,14 @@ async function setSpec(args: readonly string[]): Promise<void> {
   // hand left no journal, and the managed pre-commit refuses a staged marker
   // plan that has none.
   const title = optionalFlag(args, "--title");
-  mutatePlanFile(rootPath, target.relative, "set-spec", (body: string) => {
+  const candidate = (body: string): { body: string } => {
     const withSpec = replaceDraftSpec(body, spec).body;
     return title === undefined ? { body: withSpec } : replaceDraftTitle(withSpec, title);
-  });
+  };
+  // Every writer refuses another language before writing; this one needs no parser for that.
+  const language = protocolLanguageViolations(candidate(readFileSync(resolve(rootPath, target.relative), "utf8")).body);
+  if (language.length > 0) throw new Error(language.join("\n"));
+  mutatePlanFile(rootPath, target.relative, "set-spec", candidate);
   // The installed copy carries no lint; the launcher reports every error the saved SPEC has, like submit_spec.
   if (basename(import.meta.dir) !== "cli") return;
   const findings = await lintFindings(rootPath, target.relative);
@@ -819,7 +854,7 @@ async function setSpec(args: readonly string[]): Promise<void> {
 async function lintFindings(rootPath: string, plan: string): Promise<readonly string[]> {
   const { lint } = await import(portableRuntimeFile("plan-gate.ts"));
   const report = await lint(readFileSync(resolve(rootPath, plan), "utf8"), rootPath);
-  return report.violations.map((violation: GateViolation) => `line ${violation.line}: ${violation.text}${violation.replacement === null ? "" : ` → ${violation.replacement}`}`);
+  return report.violations.filter((violation: GateViolation) => violation.blocking).map((violation: GateViolation) => `line ${violation.line}: ${violation.text}${violation.replacement === null ? "" : ` → ${violation.replacement}`}`);
 }
 
 /** Approval runs the same lint as submission on the same bytes; every error refuses, like the tools. */
@@ -866,9 +901,13 @@ async function checkMarkdown(args: readonly string[]): Promise<void> {
   const file = args[1];
   if (file === undefined) throw new Error("markdown file is required");
   const { markdownDiagramErrors } = await import("../core/plan-gate");
-  const errors = await markdownDiagramErrors(readFileSync(resolve(process.cwd(), file), "utf8"));
+  const body = readFileSync(resolve(process.cwd(), file), "utf8");
+  const errors = await markdownDiagramErrors(body);
   if (errors.length > 0) throw new Error(`${file}: ${errors.length} mermaid block(s) do not parse\n${errors.join("\n")}`);
-  console.log(`planctl: ${file}: every mermaid block parses`);
+  // A plan is published in English only: the same rule the tools and the hooks run.
+  const language = protocolLanguageViolations(body);
+  if (language.length > 0) throw new Error(`${file}:\n${language.join("\n")}`);
+  console.log(`planctl: ${file}: every mermaid block parses, the plan is in English`);
 }
 
 function runEngine(args: readonly string[], engineCommand: string): number {

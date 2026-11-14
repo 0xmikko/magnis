@@ -3,7 +3,7 @@
 Status: APPROVED  
 Spec lock: sha256:8e87d19808001d016359bf9ec5f22410be3b810fe2073393eb0b20c88791016c owner:approved, let's make stages and then implement  
 Implementation lock: sha256:f65cd9b4f3b69438050c7dd09742f16267958556d547ee896dbce998d516f581 owner:$blueprint-start  
-Active Delivery: D1  
+Active Delivery: D2  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
@@ -595,20 +595,21 @@ Provider metadata declares its executable adapter, catalog readers and scoped fi
 
 ##### Tasks
 
-- [ ] D1S1_T1 — Provider metadata declares its executable adapter, catalog readers and scoped fields through one canonical SDK schema. (55 min)
+- [x] D1S1_T1 — Provider metadata declares its executable adapter, catalog readers and scoped fields through one canonical SDK schema. (55 min) — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
 <!-- plan:task-meta:{"writes":["packages/sdk/src/core/ai-model.ts","packages/sdk/src/core/extension-configuration.ts","packages/sdk/src/core/module-settings.ts","packages/sdk/src/core/source.ts","packages/sdk/src/core/plugin.ts","packages/sdk/src/index.ts","packages/sdk/package.json","packages/sdk/test/","backend/src/agent/models/","backend/src/core/ai-model.ts","backend/src/core/plugin.ts","backend/src/services/modules/","backend/src/services/sources/","backend/test/tst_bts_ai_models_contract.test.ts","backend/test/tst_bts_module_settings_pure.test.ts","scripts/gen-host-stubs.sh"],"predictedActiveMinutes":55,"predictedCredits":6,"how":"Add RED schema cases for a shared adapter with distinct provider identities, invalid metadata/capability declarations and ordinary Module fields rejecting secrets. Extend AiProviderDescriptor and AiCatalogCandidate and introduce the approved ExtensionConfigurationDeclaration through existing SDK schemas. Retain executable AiProviderAdapter and native SDK models in their existing backend owner. Reuse ModuleSettingField and existing Source credential declarations; preserve plugin wire envelopes and existing manifests while admitting explicit environment metadata. Update necessary descriptor/model callers and test fixtures together so this commit typechecks. Expose schema exports through the SDK's existing distribution and gen-host-stubs path. Metadata generation must consume executable SDK validators at build time; backend runtime never imports host-stubs.","red":"bun run agent:test:backend -- test/tst_bts_ai_models_contract.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- test/tst_bts_ai_models_contract.test.ts test/tst_bts_module_settings_pure.test.ts` exits 0 — canonical schemas validate provider IDs, reader references and ordinary Module fields
-- [ ] `bun run agent:build:sdk` exits 0 — the canonical SDK builds with matching declarations
-- [ ] Commit
+- [x] `bun run agent:test:backend -- test/tst_bts_ai_models_contract.test.ts test/tst_bts_module_settings_pure.test.ts` exits 0 — canonical schemas validate provider IDs, reader references and ordinary Module fields — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
+- [x] `bun run agent:build:sdk` exits 0 — the canonical SDK builds with matching declarations — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
+- [x] Commit — dc834c6f7d3672ead4c2afdd6d4be557d439c73d
 
 ##### Results
 
 <!-- plan:results:D1-S1:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D1S1_T1 | dc834c6f7d3672ead4c2afdd6d4be557d439c73d | 2026-11-14T08:35:21.877Z–2026-11-14T08:48:36.973Z | 13.2516 / 13.2516 min | unavailable: not measured by planctl | Implemented canonical scoped configuration and provider metadata schemas, candidate reasoning/nullable pricing and metadata-only document validators. RED provider metadata tests failed before implementation; 12 contract/settings tests, 18 control-plane/RPC tests, seven frontend Settings tests, both typechecks and scoped lint passed. Normal hooks additionally passed 34 backend tests. Candidate backend type reuses SDK instead of a mirror; adapted required source/fixture callers. — beyond writes: backend/test/tst_bts_ai_models_control_plane.test.ts, backend/test/tst_bts_api_ctl_ai_models.test.ts, frontend/src/modules/settings/__tests__/ModelsPanel.decision.test.tsx |
 <!-- plan:results:D1-S1:end -->
 <!-- plan:stage:D1-S1:end -->
 
@@ -934,4 +935,38 @@ The catalog release includes the validated provider document and matches the fin
 - lock-spec sha256:8e87d19808001d016359bf9ec5f22410be3b810fe2073393eb0b20c88791016c owner:approved, let's make stages and then implement
 
 - approve sha256:f65cd9b4f3b69438050c7dd09742f16267958556d547ee896dbce998d516f581 owner:$blueprint-start
+
+- record-result D1-S1 commit:dc834c6f7d3672ead4c2afdd6d4be557d439c73d
+
+- deviation D1-S1: Required canonical type propagation included existing candidate sources, control-plane/RPC fixtures and frontend descriptor fixtures outside the initial narrow inventory; behavior stays within SPEC. Source/Module manifest normalization integrates with D2-S2 and D1-S4; executable adapter types remain backend-owned.
+
+- deviation D1-S1: backend/src/agent/models/types.ts: AiCatalogCandidate needs resolved public-shape evidence for runtime dependency AiCatalogCandidateInfoSchema. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: backend/src/agent/models/types.ts: AiCatalogCandidate needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiProviderDescriptorSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiCatalogCandidateInfoSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiProviderCatalogEntrySchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiProviderCatalogEntry needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiProviderCatalogDocumentSchema is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/core/ai-model.ts: AiProviderCatalogDocument needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/index.ts: AiProviderDescriptor needs resolved public-shape evidence for runtime dependency AiProviderDescriptorSchema. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/index.ts: AiProviderCatalogEntry needs resolved public-shape evidence for runtime dependency AiProviderCatalogEntrySchema. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/index.ts: AiProviderCatalogEntry needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/index.ts: AiProviderCatalogDocument needs resolved public-shape evidence for runtime dependency AiProviderCatalogDocumentSchema. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/index.ts: AiProviderCatalogDocument needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D1-S1: packages/sdk/src/index.ts: re-export needs canonical source verification. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D1-S1 closed commit:dc834c6f7d3672ead4c2afdd6d4be557d439c73d
 <!-- plan:execution:end -->

@@ -8,15 +8,16 @@
 //
 //   bun planctl/src/core/plan-gate.ts <plan.md> [--lint [--commit <sha>]] [--closure] [--root <repo>]
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execSync, spawnSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import type { Content, Root } from "mdast";
-import { deliveryMetas, deliveryRoot, deliveryStart, deliveryEnd, repositoryEnvironment, stageInputs, stageResultCommitPaths, MACHINABLE, protocolSpecHash, protocolImplementationHash } from "./plan-update";
+import type { VocabularyEntry } from "./vocabulary";
+import { stageInputs, stageResultCommitPaths, deliveryMetas, deliveryRoot, deliveryStart, deliveryEnd, repositoryEnvironment, verifyStagedPlan, MACHINABLE, protocolSpecHash, protocolImplementationHash, SPEC_SECTIONS, contractChangePaths } from "./plan-update";
 export { MACHINABLE, protocolSpecHash, protocolImplementationHash } from "./plan-update";
 
 /** Which lint rule a finding comes from; gate findings (receipts, boxes) carry none. */
-type LintRule = "structure" | "mermaid" | "typescript" | "vocabulary" | "codes" | "sentence" | "story" | "goal" | "clarity" | "language";
+type LintRule = "structure" | "mermaid" | "typescript" | "vocabulary" | "codes" | "sentence" | "story" | "goal" | "clarity" | "language" | "target";
 
 /** One finding an agent can act on: the rule, the line, the offending text
  * and the replacement when one exists. Lint errors and gate refusals block;
@@ -32,7 +33,7 @@ export interface GateViolation {
   replacement: string | null;
 }
 
-type AddFinding = (line: number, text: string, rule: LintRule, quote?: string, replacement?: string | null) => void;
+type AddFinding = (line: number, text: string, rule: LintRule, quote?: string, replacement?: string | null, blocking?: boolean) => void;
 
 function refusal(kind: GateViolation["kind"], line: number, text: string): GateViolation {
   return { kind, rule: null, blocking: true, line, quote: "", text, replacement: null };
@@ -111,16 +112,12 @@ export function protocolLockViolations(body: string): readonly string[] {
   return violations;
 }
 
-/** @tested-by: tst_scripts_agent_stack_005, tst_scripts_agent_stack_006 */
 export function shaKnownAndAncestor(root: string, sha: string): boolean {
   const env = repositoryEnvironment();
   const probe = spawnSync("git", ["-C", root, "cat-file", "-e", `${sha}^{commit}`], { env });
   if (probe.status !== 0) return false;
-  // A merge being committed takes MERGE_HEAD as its second parent, so a
-  // receipt that arrives with the merge is an ancestor of the commit made.
-  const merging = spawnSync("git", ["-C", root, "rev-parse", "-q", "--verify", "MERGE_HEAD"], { env }).status === 0;
-  return (merging ? ["HEAD", "MERGE_HEAD"] : ["HEAD"]).some((head) =>
-    spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, head], { env }).status === 0);
+  const ancestor = spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, "HEAD"], { env });
+  return ancestor.status === 0;
 }
 
 export const CONTINUATION = /^\s{2,}(?!-\s\[)\S/;
@@ -242,11 +239,89 @@ function lintProse(
     const code = text.match(/\b(?:D\d+-S\d+|INV-\d+)\b/);
     if (code !== null) add(sourceLine(node), "plan code in prose", "codes", code[0]);
     for (const match of matches(text)) add(sourceLine(node), `say ${match.term} instead of ${match.word}`, "vocabulary", match.word, match.term);
-    for (const sentence of new Intl.Segmenter("en", { granularity: "sentence" }).segment(text.replace(/\s+/g, " "))) {
-      const words = sentence.segment.trim();
-      if (words.split(/\s+/).length > 30) add(sourceLine(node), "sentence exceeds thirty words", "sentence", words);
+
+  }
+}
+
+/** A member belongs to its named contract, not to every type using the same spelling. */
+function contractMemberKey(node: import("typescript").Node, ts: typeof import("typescript")): string | null {
+  const signatureParameter = ts.isParameter(node) && (ts.isMethodSignature(node.parent)
+    || ts.isCallSignatureDeclaration(node.parent) || ts.isFunctionTypeNode(node.parent));
+  if (!ts.isPropertySignature(node) && !ts.isMethodSignature(node) && !signatureParameter) return null;
+  const names: string[] = [];
+  for (let current: import("typescript").Node | undefined = node; current !== undefined; current = current.parent) {
+    if (ts.isInterfaceDeclaration(current) || ts.isTypeAliasDeclaration(current)) {
+      return [current.name.text, ...names].join(".");
+    }
+    if (ts.isPropertySignature(current) || ts.isMethodSignature(current)) {
+      if (!ts.isIdentifier(current.name) && !ts.isStringLiteral(current.name)) return null;
+      names.unshift(current.name.text);
+    }
+    if (ts.isParameter(current)) {
+      if (!ts.isIdentifier(current.name)) return null;
+      names.unshift(`(${current.name.text})`);
     }
   }
+  return null;
+}
+
+/** Preserve existing protocol names from committed declarations in the plan's repositories.
+ * @tested-by: tst_core_planctl_preserved_names_001
+ * @invariant: a quoted key or uncommitted edit cannot authorize an invented member name.
+ */
+async function committedContractMembers(
+  body: string,
+  root: string,
+  nodes: readonly (Root | Content)[],
+  interfaces: { text: string; line: number } | null,
+  ts: typeof import("typescript"),
+): Promise<ReadonlySet<string>> {
+  const requested = new Set<string>();
+  const types = new Set<string>();
+  if (interfaces === null) return requested;
+  for (const node of nodes) {
+    if (node.type !== "code" || !["ts", "tsx", "typescript"].includes(node.lang ?? "")
+      || sourceLine(node) <= interfaces.line || sourceLine(node) > interfaces.line + interfaces.text.split("\n").length) continue;
+    const source = ts.createSourceFile("plan.ts", node.value, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const visit = (syntax: import("typescript").Node): void => {
+      const key = contractMemberKey(syntax, ts);
+      if (key !== null && key.includes("_")) {
+        requested.add(key);
+        types.add(key.slice(0, key.indexOf(".")));
+      }
+      ts.forEachChild(syntax, visit);
+    };
+    visit(source);
+  }
+  const existing = new Set<string>();
+  if (requested.size === 0) return existing;
+  const { definitionRoot, parseVocabulary } = await import("./vocabulary");
+  // Canonical definitions can name another repository while the SPEC is still
+  // a draft, before the protocol permits authoring Delivery metadata.
+  const canonicalRoots = parseVocabulary(body).flatMap((entry) => entry.definitions)
+    .filter((definition) => types.has(definition.name))
+    .map((definition) => definitionRoot(root, definition.repository));
+  const roots = new Set([root, ...canonicalRoots, ...deliveryMetas(body).map((delivery) => deliveryRoot(root, delivery))]);
+  const env = repositoryEnvironment();
+  const names = [...types].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const pattern = `(interface|type)[[:space:]]+(${names})([^[:alnum:]_$]|$)`;
+  for (const checkout of roots) {
+    const found = spawnSync("git", ["-C", checkout, "grep", "-lz", "-E", pattern, "HEAD", "--", "*.ts", "*.tsx"], { encoding: "utf8", env });
+    if (found.status === 1) continue;
+    if (found.status !== 0) throw new Error(`cannot read committed type names in ${checkout}: ${found.stderr.trim()}`);
+    for (const path of found.stdout.split("\0").filter((entry) => entry !== "")) {
+      const file = spawnSync("git", ["-C", checkout, "show", path], { encoding: "utf8", env });
+      if (file.status !== 0) throw new Error(`cannot read ${path} in ${checkout}: ${file.stderr.trim()}`);
+      const source = ts.createSourceFile(path, file.stdout, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+      const visit = (syntax: import("typescript").Node): void => {
+        const key = contractMemberKey(syntax, ts);
+        if (key !== null && requested.has(key)) existing.add(key);
+        ts.forEachChild(syntax, visit);
+      };
+      visit(source);
+    }
+  }
+  return existing;
 }
 
 function lintTypes(
@@ -254,6 +329,7 @@ function lintTypes(
   interfaces: { text: string; line: number } | null,
   ts: typeof import("typescript"),
   add: AddFinding,
+  preservedMembers: ReadonlySet<string>,
 ): Set<string> {
   const types = new Set<string>();
   for (const node of nodes) {
@@ -277,20 +353,24 @@ function lintTypes(
       if (ts.isInterfaceDeclaration(syntax) || ts.isTypeAliasDeclaration(syntax)) {
         if (interfaces !== null && sourceLine(node) > interfaces.line && sourceLine(node) <= interfaces.line + interfaces.text.split("\n").length) types.add(syntax.name.text);
       }
+      // New names use camelCase; Interfaces must also be able to describe existing protocol contracts exactly.
+      if ((ts.isPropertySignature(syntax) || ts.isPropertyDeclaration(syntax) || ts.isParameter(syntax) || ts.isMethodSignature(syntax)
+        || ts.isMethodDeclaration(syntax) || ts.isVariableDeclaration(syntax) || ts.isFunctionDeclaration(syntax) || ts.isPropertyAssignment(syntax)) && syntax.name !== undefined) {
+        const name = syntax.name.getText(source).replace(/^["'`]|["'`]$/g, "");
+        const key = contractMemberKey(syntax, ts);
+        const inInterfaces = interfaces !== null && sourceLine(node) > interfaces.line
+          && sourceLine(node) <= interfaces.line + interfaces.text.split("\n").length;
+        if (name.includes("_") && !(inInterfaces && key !== null && preservedMembers.has(key))) {
+          const row = source.getLineAndCharacterOfPosition(syntax.name.getStart(source)).line;
+          add(sourceLine(node) + row + 1, `\`${name}\` is not camelCase and is not a committed member of this type`, "typescript", name);
+        }
+      }
       if (ts.isFunctionLike(syntax)) {
         for (const parameter of syntax.parameters) {
           if (parameter.type !== undefined) continue;
           const row = source.getLineAndCharacterOfPosition(parameter.getStart(source)).line;
           const owner = "name" in syntax && syntax.name !== undefined && ts.isIdentifier(syntax.name) ? syntax.name.text : "a function";
           add(sourceLine(node) + row + 1, `untyped parameter \`${parameter.name.getText(source)}\` in \`${owner}\`: pseudocode is TypeScript with types`, "typescript");
-        }
-      }
-      if (ts.isInterfaceDeclaration(syntax) || ts.isTypeLiteralNode(syntax)) {
-        const seen = new Set<number>();
-        for (const member of syntax.members) {
-          const row = source.getLineAndCharacterOfPosition(member.getStart(source)).line;
-          if (seen.has(row)) add(sourceLine(node) + row + 1, "put each TypeScript field on its own line", "typescript");
-          seen.add(row);
         }
       }
       ts.forEachChild(syntax, visit);
@@ -346,10 +426,28 @@ function exportedTypes(text: string, path: string, ts: typeof import("typescript
 /** Exported types the commit adds or changes that the SPEC Interfaces do not name. */
 function undeclaredTypesOf(root: string, commit: string, types: ReadonlySet<string>, ts: typeof import("typescript")): readonly { path: string; name: string }[] {
   const found: { path: string; name: string }[] = [];
+  const renamed = new Map(contractChangePaths(root, `${commit}^1`, commit).map(c => [c.path, c.previousPath]));
+  // @tested-by: tst_core_planctl_subtree_types_001
+  // A subtree merge carries existing declarations at a new prefix. Compare
+  // them with the actual imported parent; trailers alone prove nothing.
+  const metadata = spawnSync("git", ["-C", root, "show", "-s",
+    "--format=%P%x00%(trailers:key=git-subtree-dir,valueonly,separator=%x00)%x00%(trailers:key=git-subtree-split,valueonly,separator=%x00)",
+    commit], { encoding: "utf8" });
+  if (metadata.status !== 0) throw new Error(`cannot inspect type ancestry of ${commit}`);
+  const fields = metadata.stdout.trimEnd().split("\0");
+  const [parents, directory, split] = fields;
+  const subtree = fields.length === 3 && directory !== undefined && split !== undefined
+    && directory.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+    && parents?.split(" ").slice(1).includes(split)
+    ? { prefix: `${directory}/`, parent: split }
+    : null;
   for (const path of stageResultCommitPaths(commit, root).filter((path) => /\.tsx?$/.test(path))) {
     const current = spawnSync("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     if (current.status !== 0) continue; // deleted files introduce no types
-    const previous = spawnSync("git", ["-C", root, "show", `${commit}^1:${path}`], { encoding: "utf8" });
+    let previous = spawnSync("git", ["-C", root, "show", `${commit}^1:${renamed.get(path) ?? path}`], { encoding: "utf8" });
+    if (previous.status !== 0 && subtree !== null && path.startsWith(subtree.prefix)) {
+      previous = spawnSync("git", ["-C", root, "show", `${subtree.parent}:${path.slice(subtree.prefix.length)}`], { encoding: "utf8" });
+    }
     const before = exportedTypes(previous.status === 0 ? previous.stdout : "", path, ts);
     for (const [name, text] of exportedTypes(current.stdout, path, ts)) {
       if (before.get(name) !== text && !types.has(name)) found.push({ path, name });
@@ -360,7 +458,7 @@ function undeclaredTypesOf(root: string, commit: string, types: ReadonlySet<stri
 
 function lintCommit(root: string, commit: string, types: ReadonlySet<string>, line: number, ts: typeof import("typescript"), add: AddFinding): void {
   for (const { path, name } of undeclaredTypesOf(root, commit, types, ts)) {
-    add(line, `${path}: exported type ${name} is missing from SPEC Interfaces`, "typescript", name);
+    add(line, `${path}: exported type ${name} is not listed in SPEC Interfaces; record implementation details in the execution log and continue within the approved behavior`, "typescript", name, null, false);
   }
 }
 
@@ -392,59 +490,147 @@ function specView(body: string, fromMarkdown: (value: string) => Root): {
   return { specStart, specEnd, specLines, nodes, blocks, headings, section };
 }
 
-/** The rows every implementation map carries. */
-const MAP_ROWS = ["Owner", "Target files", "Input / wake", "Output / durable state", "RED test"] as const;
-
-/** The flows of The target: every heading one level under it that is not a named section, each with its mermaid diagram and its implementation map. */
-function targetFlows(specLines: readonly string[], blocks: readonly Content[], headings: readonly (Root | Content)[]): { line: number; flows: readonly { name: string; line: number; diagram: boolean; map: boolean }[] } | null {
-  const target = headings.find((node) => node.type === "heading" && proseText(node).toLowerCase() === "the target");
-  if (target === undefined || target.type !== "heading") return null;
-  const start = sourceLine(target);
-  const after = headings.find((node) => node.type === "heading" && sourceLine(node) > start && node.depth <= target.depth);
-  const end = after === undefined ? Number.MAX_SAFE_INTEGER : sourceLine(after);
-  const named = new Set<string>([...REQUIRED_SECTIONS, "Interfaces", "What changes"].map((name) => name.toLowerCase()));
-  const inside = headings.flatMap((node) => node.type === "heading" && sourceLine(node) > start && sourceLine(node) < end && node.depth === target.depth + 1 ? [node] : []);
-  const flows = inside.filter((node) => !named.has(proseText(node).toLowerCase())).map((node) => {
-    const from = sourceLine(node);
-    const following = inside.find((other) => sourceLine(other) > from);
-    const to = following === undefined ? end : sourceLine(following);
-    const own = blocks.filter((block) => block.position !== undefined && block.position.start.line > from && block.position.start.line < to);
-    // The parser reads no GFM tables, so the map is found on the source lines, like the New names table.
-    const lines = specLines.slice(from, to === Number.MAX_SAFE_INTEGER ? specLines.length : to - 1);
-    return {
-      name: proseText(node),
-      line: from,
-      diagram: own.some((block) => block.type === "code" && block.lang === "mermaid"),
-      map: MAP_ROWS.every((row) => lines.some((line) => new RegExp(`^\\|\\s*${row}\\s*\\|`).test(line))),
+/** Deterministic requirements cover Target and its Interfaces, independently
+ * of unrelated types elsewhere or the availability of a semantic provider.
+ * @tested-by: tst_unit_planctl_content_006, tst_unit_planctl_content_007, tst_unit_planctl_spec_submission_003
+ */
+export async function targetViolations(body: string, scope: "spec" | "flow"): Promise<readonly GateViolation[]> {
+  const [{ fromMarkdown }, ts] = await Promise.all([import("mdast-util-from-markdown"), import("typescript")]);
+  const view = specView(body, fromMarkdown);
+  const target = view.section("The target");
+  if (target === null && scope === "spec") return [];
+  const interfaces = view.section("Interfaces");
+  const regions = (target === null ? [] : [target, ...(interfaces === null ? [] : [interfaces])])
+    .map(region => ({ start: region.line, end: region.line + region.text.split("\n").length }));
+  const content = target === null ? body : view.specLines.map((line, index) =>
+    regions.some(region => index >= region.start && index < region.end) ? line : "").join("\n");
+  const findings: GateViolation[] = [];
+  const report = (line: number, quote: string, text: string): void => {
+    findings.push({ kind: "protocol-shape", rule: "target", blocking: true, line, quote, text, replacement: null });
+  };
+  const databaseBuilders = new Set(["pgTable", "pgEnum", "pgView", "mysqlTable", "sqliteTable"]);
+  const databaseTypes = new Set(["InferSelectModel", "InferInsertModel"]);
+  const patch = /\b(?:same (?:fields|shape|type|interface)\b[^.\n]{0,80}\bplus|(?:fields|columns) (?:are|will be|must be) added|(?:I|we) will add\b|(?:add|append)\s+[^.\n]{1,160}\bto (?:the )?(?:existing|current)\b[^.\n]{0,80}\b(?:type|interface|schema|contract)\b)/i;
+  for (const node of markdownNodes(fromMarkdown(content))) {
+    if (node.type === "paragraph" || node.type === "heading") {
+      const text = proseText(node);
+      if (/^(?:Today|Currently|At present)\s+/i.test(text) || /\bas (?:it|they) (?:do|does|is|are) today\b/i.test(text)) {
+        report(sourceLine(node), text, "Target must describe the finished system. Move the current-state explanation to the existing Today section.");
+      }
+      if (patch.test(text)) report(sourceLine(node), text, "Show the complete final contract in Target; instructions to add fields to another definition are not a target type.");
+    }
+    if (node.type !== "code") continue;
+    if (node.lang === "sql" && /\b(?:create|alter|drop)\s+(?:table|type|view)\b/i.test(node.value)) {
+      report(sourceLine(node), node.value, "Target data must be shown as complete hand-written TypeScript types, not database definitions.");
+    }
+    if (!["", "ts", "tsx", "typescript", "js", "jsx", "javascript"].includes(node.lang ?? "")) continue;
+    const source = ts.createSourceFile("target.ts", node.value, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    for (const statement of source.statements) {
+      if (!ts.isImportDeclaration(statement) || !statement.importClause?.namedBindings || !ts.isNamedImports(statement.importClause.namedBindings)) continue;
+      for (const imported of statement.importClause.namedBindings.elements) {
+        if (databaseBuilders.has(imported.propertyName?.text ?? imported.name.text)) databaseBuilders.add(imported.name.text);
+        if (databaseTypes.has(imported.propertyName?.text ?? imported.name.text)) databaseTypes.add(imported.name.text);
+      }
+    }
+    for (const statement of source.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        const value = declaration.initializer;
+        const name = value === undefined ? null : ts.isIdentifier(value) ? value.text
+          : ts.isPropertyAccessExpression(value) ? value.name.text : null;
+        if (ts.isIdentifier(declaration.name) && name !== null && databaseBuilders.has(name)) databaseBuilders.add(declaration.name.text);
+      }
+    }
+    const reconstructedFields = (type: import("typescript").TypeNode): boolean => {
+      if (ts.isTypeReferenceNode(type)) return ts.isIdentifier(type.typeName) && ["Partial", "Omit", "Pick", "Required"].includes(type.typeName.text);
+      if (ts.isParenthesizedTypeNode(type)) return reconstructedFields(type.type);
+      return (ts.isIntersectionTypeNode(type) || ts.isUnionTypeNode(type)) && type.types.some(reconstructedFields);
     };
-  });
-  return { line: start, flows };
+    const visit = (syntax: import("typescript").Node): void => {
+      const line = sourceLine(node) + 1 + source.getLineAndCharacterOfPosition(syntax.getStart(source)).line;
+      if (ts.isCallExpression(syntax)) {
+        const name = ts.isIdentifier(syntax.expression) ? syntax.expression.text
+          : ts.isPropertyAccessExpression(syntax.expression) ? syntax.expression.name.text : null;
+        if (name !== null && databaseBuilders.has(name)) report(line, syntax.getText(source),
+          "Target must show the complete final TypeScript data type. Database declarations belong outside Target, even when another interface is present.");
+      }
+      if (ts.isTypeQueryNode(syntax) && /\$infer(?:Select|Insert)\b/.test(syntax.getText(source))) {
+        report(line, syntax.getText(source), "Write the final Target fields and their TypeScript types explicitly; an inferred database type does not show them.");
+      }
+      if (ts.isIndexedAccessTypeNode(syntax) && ts.isLiteralTypeNode(syntax.indexType)
+        && ts.isStringLiteral(syntax.indexType.literal) && /^\$infer(?:Select|Insert)$/.test(syntax.indexType.literal.text)) {
+        report(line, syntax.getText(source), "Write the final Target fields and their TypeScript types explicitly; an inferred database type does not show them.");
+      }
+      if (ts.isTypeReferenceNode(syntax)) {
+        const name = ts.isIdentifier(syntax.typeName) ? syntax.typeName.text : syntax.typeName.right.text;
+        if (databaseTypes.has(name)) report(line, syntax.getText(source),
+          "Write the final Target fields and their TypeScript types explicitly; an inferred database type does not show them.");
+      }
+      if ((ts.isTypeAliasDeclaration(syntax) && reconstructedFields(syntax.type))
+        || (ts.isInterfaceDeclaration(syntax) && syntax.heritageClauses?.some(clause => clause.types.some(type =>
+          ts.isIdentifier(type.expression) && ["Partial", "Omit", "Pick", "Required"].includes(type.expression.text))))) {
+        report(line, syntax.getText(source), "List the complete fields of the final Target type explicitly; do not make the reader derive its field list with Partial, Omit or Pick.");
+      }
+      ts.forEachChild(syntax, visit);
+    };
+    visit(source);
+    const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, node.value);
+    for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+      if (token !== ts.SyntaxKind.SingleLineCommentTrivia && token !== ts.SyntaxKind.MultiLineCommentTrivia) continue;
+      const comment = scanner.getTokenText();
+      const line = sourceLine(node) + 1 + source.getLineAndCharacterOfPosition(scanner.getTokenPos()).line;
+      if (/^\s*(?:\/\/|\/\*+)\s*today\b|\bcurrent (?:code|implementation|schema)\b/i.test(comment)) {
+        report(line, comment, "Remove current-code examples from Target; show only the finished component and its contracts.");
+      }
+      if (patch.test(comment) || /\{[^\n]*\}\s*(?:→|=>)\s*\{/.test(comment)) {
+        report(line, comment, "Replace this contract sketch with the complete hand-written Target request or result type.");
+      }
+    }
+  }
+  return findings;
+}
+
+/** The repository paths a line names: tokens with a slash, globs and URLs aside. */
+function namedPaths(line: string): readonly string[] {
+  const found = new Set<string>();
+  for (const match of line.matchAll(/(?:^|[\s|,;(`])((?:[\w.@-]+\/)+[\w.@\-\[\]]+)/g)) {
+    const path = match[1] ?? "";
+    if (path.includes("://") || path.includes("*")) continue;
+    found.add(path);
+  }
+  return [...found];
 }
 
 /** Exported TypeScript types a commit adds or changes that the plan's
- * Interfaces section does not declare. Completion refuses them by name.
+ * Interfaces section does not declare. Completion records them without
+ * treating a source-code export as a new owner decision.
  * @tested-by: tst_scripts_planupdate_025
  */
 export async function undeclaredExportedTypes(root: string, commit: string, body: string): Promise<readonly { path: string; name: string }[]> {
   const [{ fromMarkdown }, ts] = await Promise.all([import("mdast-util-from-markdown"), import("typescript")]);
   const view = specView(body, fromMarkdown);
-  const types = lintTypes(view.nodes, view.section("Interfaces"), ts, () => {});
+  const types = lintTypes(view.nodes, { line: 0, text: view.specLines.join("\n") }, ts, () => {}, new Set());
   return undeclaredTypesOf(root, commit, types, ts);
 }
 
 /** The SPEC sections every plan carries, in the order the owner reads them. */
-export const REQUIRED_SECTIONS = ["The Goal", "Why now", "The target", "Target tree", "Invariants", "Reuse", "New names", "Not verified"] as const;
+export const REQUIRED_SECTIONS = SPEC_SECTIONS;
 
-/** What a Goal is: the rule the agent reads at init and the model checks at submission. */
-export const GOAL_RULE = "The Goal is one to six numbered outcomes the owner reads as a whole: what will be done, in what order, "
-  + "who calls whom and what results. A measure where one exists. It promises only what the request asks: no vision, no backstory, no extra scope. Plain English.";
+/** Goal guidance returned at init; research and owner discussion decide the content. */
+export const GOAL_RULE = "State the requested outcome and a useful observable measure, when available. "
+  + "Keep the Goal distinct from the solution. Plain English, no historical justification.";
 
-/** What The target is: the rule the agent reads at init and the lint measures at submission. */
-export const TARGET_RULE = "The target is flows. Each flow is one ### heading, one mermaid diagram of that flow, a few lines of explanation, "
-  + "and an implementation map table with the rows Owner, Target files, Input / wake, Output / durable state, RED test. "
-  + "The types a flow changes are declared in Interfaces. Nothing in The target is prose without its flow.";
+/** A readable solution, not a form-filling exercise. */
+export const TARGET_RULE = "Describe the finished system one flow at a time: trigger/input, owning component, operations, result and relevant failures. "
+  + "Write clear, direct prose proportionate to the task; explain necessary technical names where they arise. "
+  + "A small change may need just a short paragraph and its data type. Do not narrate compliance with instructions or repeat the same explanation as prose, tables and checklists. "
+  + "Show complete target data as hand-written TypeScript interfaces or types beside the flow, not database declarations or current code plus instructions to add fields. "
+  + "Write changed request and result fields explicitly, rather than deriving their field lists with Partial, Omit or Pick. "
+  + "Make the data operation and result understandable before listing helpers, files and API calls; use a concrete example when it explains the behavior more clearly. "
+  + "Cite unchanged canonical contracts. Use a readable diagram where it helps. "
+  + "Discuss and check small pieces before assembling the full SPEC. Do not require an implementation-map table or arbitrary prose length.";
 
-/** One flow in the shape every flow of The target takes, handed to the agent at init. */
+/** One worked example handed to the agent at init. */
 function flowExample(): string {
   return readFileSync(resolve(import.meta.dir, "../../../shared/code-production/laws/flow-example.md"), "utf8").trim();
 }
@@ -455,6 +641,8 @@ export interface AuthoringContract {
   readonly goalRule: string;
   readonly targetRule: string;
   readonly example: string;
+  readonly entries: readonly VocabularyEntry[];
+  readonly vocabularyRevision: string;
 }
 
 function vocabularyMap(root: string, synonyms: (root: string, file?: string) => Map<string, string>): Map<string, string> {
@@ -469,12 +657,16 @@ function vocabularyMap(root: string, synonyms: (root: string, file?: string) => 
  */
 export async function authoringContract(root: string): Promise<AuthoringContract> {
   const { synonyms } = await import("../../../shared/code-production/instruction-audit");
+  const { readVocabulary } = await import("./vocabulary");
+  const definitions = readVocabulary(root);
   return {
     sections: REQUIRED_SECTIONS,
     vocabulary: [...vocabularyMap(root, synonyms)].map(([word, term]) => ({ word, term })),
     goalRule: GOAL_RULE,
     targetRule: TARGET_RULE,
     example: flowExample(),
+    entries: definitions.entries,
+    vocabularyRevision: definitions.vocabularyRevision,
   };
 }
 
@@ -496,42 +688,62 @@ export async function lint(body: string, root: string, commit?: string): Promise
     import("../../../shared/code-production/instruction-audit"),
   ]);
   const violations: GateViolation[] = [];
-  const add: AddFinding = (line, text, rule, quote = "", replacement = null): void => {
-    violations.push({ kind: "protocol-shape", rule, blocking: true, line, quote, text, replacement });
+  const add: AddFinding = (line, text, rule, quote = "", replacement = null, blocking = true): void => {
+    violations.push({ kind: "protocol-shape", rule, blocking, line, quote, text, replacement });
   };
+  const advise: AddFinding = (line, text, rule, quote, replacement): void => add(line, text, rule, quote, replacement, false);
   const lines = body.split("\n");
-  const { specStart, specEnd, specLines, nodes, blocks, headings, section } = specView(body, fromMarkdown);
+  const { specStart, specEnd, specLines, nodes, headings, section } = specView(body, fromMarkdown);
   if ((specStart >= 0 || specEnd >= 0) && (specStart < 0 || specEnd <= specStart)) {
     return { violations: [refusal("protocol-shape", 1, "missing ordered SPEC markers")], metrics: [] };
   }
+  violations.push(...await targetViolations(body, "spec"));
   const required = REQUIRED_SECTIONS;
   for (const name of required) {
-    if (!headings.some((node) => proseText(node).toLowerCase() === name.toLowerCase())) add(specStart + 2, `missing SPEC section: ${name}`, "structure", name);
+    if (!headings.some((node) => proseText(node).toLowerCase() === name.toLowerCase())) add(specStart + 2, `missing SPEC section: ${name}`, "structure", name, null, name === "The Goal" || name === "The target");
   }
   for (const name of required) {
     const block = section(name);
     if (block !== null && (block.text.trim() === "" || /^<[^>]+>$/.test(block.text.trim()))) add(block.line, `empty SPEC section: ${name}`, "structure", name);
   }
-  const names = section("New names");
-  if (names !== null && !/^\|\s*-{3,}\s*\|\s*-{3,}/m.test(names.text)) add(names.line, "New names needs a name/reason table", "structure");
-  const flows = targetFlows(specLines, blocks, headings);
-  if (flows !== null) {
-    if (flows.flows.length === 0) add(flows.line, "The target has no flow: one ### heading per flow, each with its mermaid diagram and its implementation map", "structure");
-    for (const flow of flows.flows) {
-      if (!flow.diagram) add(flow.line, `flow «${flow.name}» has no mermaid diagram`, "structure", flow.name);
-      if (!flow.map) add(flow.line, `flow «${flow.name}» has no implementation map: a table with the rows ${MAP_ROWS.join(", ")}`, "structure", flow.name);
-    }
+  // Every file a plan names exists, or the Target tree creates it: an invented layer has nothing to cite.
+  const creates = new Set<string>();
+  const cited: { readonly line: number; readonly path: string }[] = [];
+  const tree = section("Target tree");
+  if (tree !== null) tree.text.split("\n").forEach((line, index) => {
+    const action = /^\|\s*(CREATE|MODIFY|DELETE)\b/i.exec(line);
+    if (action === null) return;
+    for (const path of namedPaths(line)) ((action[1] ?? "").toUpperCase() === "CREATE" ? creates.add(path) : cited.push({ line: tree.line + index, path }));
+  });
+  const targetSection = section("The target");
+  if (targetSection !== null) targetSection.text.split("\n").forEach((line, index) => {
+    if (/^\|\s*Target files\s*\|/.test(line)) for (const path of namedPaths(line)) cited.push({ line: targetSection.line + index, path });
+  });
+  for (const entry of cited) {
+    if (!creates.has(entry.path) && !existsSync(resolve(root, entry.path))) add(entry.line, `file does not exist: ${entry.path}; name it CREATE in the Target tree if the plan creates it`, "structure", entry.path);
   }
+  // A line that repeats another says nothing twice.
+  const firstSeen = new Map<string, number>();
+  let fenced = false;
+  specLines.forEach((text, index) => {
+    if (text.trimStart().startsWith("```")) { fenced = !fenced; return; }
+    const key = text.trim();
+    if (fenced || key.startsWith("|") || key.split(/\s+/).length < 6) return;
+    const first = firstSeen.get(key);
+    if (first !== undefined) advise(index + 1, `line ${index + 1} repeats line ${first}`, "structure", key);
+    else firstSeen.set(key, index + 1);
+  });
   const vocabulary = vocabularyMap(root, synonyms);
   const fullNodes = markdownNodes(fromMarkdown(body));
   const implementationEnd = lines.indexOf("<!-- plan:implementation:end -->");
   const authored = fullNodes.filter((node) => specStart < 0 || (sourceLine(node) > specStart && (implementationEnd < 0 ? sourceLine(node) < specEnd : sourceLine(node) < implementationEnd)));
-  lintProse(authored, (text) => vocabularyMatches(text, vocabulary), add);
+  lintProse(authored, (text) => vocabularyMatches(text, vocabulary), advise);
   for (const found of languageLines(body)) add(found.line, LANGUAGE_RULE, "language", found.quote);
-  const interfaces = section("Interfaces");
-  const types = lintTypes(nodes, interfaces, ts, add);
+  // Flow-local Interfaces sections all belong to the SPEC, not only the first heading.
+  const interfaces = { line: 0, text: specLines.join("\n") };
+  const types = lintTypes(nodes, interfaces, ts, add, await committedContractMembers(body, root, nodes, interfaces, ts));
   const target = section("Target tree");
-  if (target !== null && /\.tsx?\b/.test(target.text) && types.size === 0) add(target.line, "Interfaces must show the TypeScript types changed by this plan", "structure");
+  if (target !== null && /\.tsx?\b/.test(target.text) && types.size === 0) advise(target.line, "Interfaces must show the TypeScript types changed by this plan", "structure");
   await lintMermaid(authored, add);
   // The common checkbox parser is also used by execution and closure.
   const contentLines = [...lines];
@@ -545,15 +757,15 @@ export async function lint(body: string, root: string, commit?: string): Promise
     if (item.section === "criteria" && text !== "Commit" && !MACHINABLE.test(text)) add(item.line + 1, "criterion must be a command with its exit code or Commit", "structure", text);
   }
   contentLines.forEach((line, index) => {
-    if (/^\s*(?:-\s+)?Predict:/.test(line)) add(index + 1, "Predict fields are not part of the plan", "structure", line.trim());
+    if (/^\s*(?:-\s+)?Predict:/.test(line)) advise(index + 1, "Predict fields are not part of the plan", "structure", line.trim());
   });
   const stages = stageInputs(body);
   for (const stage of stages) for (const task of stage.tasks) {
-    if (task.story.length > 200) add(lines.findIndex((line) => line.includes(`${task.id} — `)) + 1, "Task story exceeds 200 characters", "story", task.story);
+    if (task.story.length > 200) advise(lines.findIndex((line) => line.includes(`${task.id} — `)) + 1, "Task story exceeds 200 characters", "story", task.story);
   }
   const writes = [...new Set(stages.flatMap((stage) => stage.tasks.flatMap((task) => task.writes)))];
   if (stages.length > 0 && writes.length <= 2 && writes.every((path) => /\.[a-z]+$/i.test(path) && !/[*?{}]/.test(path))) {
-    add(1, "two files or fewer: this is a commit, not a plan", "structure");
+    advise(1, "two files or fewer: this is a commit, not a plan", "structure");
   }
   if (commit !== undefined) lintCommit(root, commit, types, interfaces?.line ?? 1, ts, add);
   const metrics = [
@@ -634,6 +846,7 @@ export function gatePlan(
     }
     report.closedBoxes += 1;
 
+    // @tested-by: tst_core_planctl_repository_001, tst_core_planctl_repository_002
     const owning = deliveries.find((entry) => item.line > entry.start && item.line < entry.end);
     let root = options.root;
     if (owning !== undefined) {
@@ -976,6 +1189,22 @@ if (import.meta.main && ["plan-gate.ts", "plan-gate.js"].includes(basename(impor
       if (candidate === null) continue;   // deleted: the ledger answers for purges
       const renamedFrom = renames.get(path);
       const parent = read("HEAD", renamedFrom ?? path);
+      // @tested-by: tst_unit_planctl_mcp_011
+      // MCP records approvals before the first plan commit. Its journal and
+      // locks prove that transition; the legacy parent-diff rule cannot.
+      // Keep the legacy check for plans that predate the protocol.
+      if (candidate.includes(PROTOCOL_SPEC_START) || parent?.includes(PROTOCOL_SPEC_START)) {
+        try {
+          if (!candidate.includes(PROTOCOL_SPEC_START)) throw new Error("cannot remove the plan protocol markers");
+          verifyStagedPlan(freezeRoot, path);
+          const violations = protocolLockViolations(candidate);
+          if (violations.length > 0) throw new Error(violations.join("\n"));
+        } catch (error: unknown) {
+          console.error(`plan-freeze: ${path}: ${error instanceof Error ? error.message : String(error)}`);
+          refused += 1;
+        }
+        continue;
+      }
       const autoMerged = merged !== null && !merged.conflicted.has(path)
         ? read(merged.tree, path)
         : null;
@@ -1016,8 +1245,8 @@ if (import.meta.main && ["plan-gate.ts", "plan-gate.js"].includes(basename(impor
     if (commitIndex >= 0 && commit === undefined) throw new Error("--commit requires a Git revision");
     const report = await lint(readFileSync(plan, "utf8"), root, commit);
     for (const metric of report.metrics) console.log(metric);
-    for (const violation of report.violations) console.log(`VIOLATION [${violation.kind}] line ${violation.line}: ${violation.text}`);
-    process.exit(report.violations.length === 0 ? 0 : 1);
+    for (const violation of report.violations) console.log(`${violation.blocking ? "ERROR" : "ADVICE"} [${violation.kind}] line ${violation.line}: ${violation.text}`);
+    process.exit(report.violations.some((violation) => violation.blocking) ? 1 : 0);
   }
   const report = gatePlan(plan, { root, closure, start, noExec });
   console.log(`boxes: ${report.closedBoxes} closed / ${report.openBoxes} open; machinable criteria re-run: ${report.checkedCriteria}`);
