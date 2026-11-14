@@ -116,8 +116,10 @@ export function shaKnownAndAncestor(root: string, sha: string): boolean {
   const env = repositoryEnvironment();
   const probe = spawnSync("git", ["-C", root, "cat-file", "-e", `${sha}^{commit}`], { env });
   if (probe.status !== 0) return false;
-  const ancestor = spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, "HEAD"], { env });
-  return ancestor.status === 0;
+  // A pending merge will make both current parents ancestors of its commit.
+  // Unrelated branch tips still cannot license receipts.
+  return ["HEAD", "MERGE_HEAD"].some((parent) =>
+    spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, parent], { env }).status === 0);
 }
 
 export const CONTINUATION = /^\s{2,}(?!-\s\[)\S/;

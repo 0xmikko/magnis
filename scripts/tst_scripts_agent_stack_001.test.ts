@@ -21,6 +21,9 @@ if [ "$1" = "-C" ]; then shift 2; fi
 case "$*" in
   'rev-parse --show-toplevel') printf '%s\\n' "$FIXTURE_ROOT" ;;
   'rev-parse --abbrev-ref HEAD') printf '%s\\n' "$FIXTURE_BRANCH" ;;
+  'config --get code-production.base') printf '%s\\n' staging ;;
+  'rev-parse --path-format=absolute --git-path code-production/publication-required') printf '%s.required\\n' "$FIXTURE_RECEIPT" ;;
+  'rev-parse --path-format=absolute --git-path code-production/publication.json') printf '%s.publication\\n' "$FIXTURE_RECEIPT" ;;
   'rev-parse HEAD') printf '%s\\n' "$FIXTURE_HEAD" ;;
   'rev-parse --path-format=absolute --git-path code-production/verify-pr.sha') printf '%s\\n' "$FIXTURE_RECEIPT" ;;
   'diff --cached --name-only --diff-filter=ACMR -- docs/plans/*.md'|'ls-files docs/plans/*.md'|'diff --quiet'|'diff --cached --quiet'|'diff --cached --name-only -z --diff-filter=ACMRD') ;;
