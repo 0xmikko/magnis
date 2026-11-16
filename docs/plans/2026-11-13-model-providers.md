@@ -927,7 +927,7 @@ The catalog release includes the validated provider document and matches the fin
 
 - [x] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — release data is deterministic, validated and includes providers metadata — e12a854872c15587aa4d0b99f6540aeda7b19d8e
 - [x] `bun run agent:build:catalog` exits 0 — the normal catalog artifact includes the provider document — e12a854872c15587aa4d0b99f6540aeda7b19d8e
-- [x] `bun run agent:verify:pr` exits 0 — the complete catalog gate passes before its required final review and publication — e12a854872c15587aa4d0b99f6540aeda7b19d8e
+- [x] `bun run agent:verify:pr` exits 0 — the complete catalog gate passes before its required final review and publication — 598a4995c4b3d7f13db735d209ebda1db45f0b93
 - [x] Commit — e12a854872c15587aa4d0b99f6540aeda7b19d8e
 
 ##### Results
@@ -1302,4 +1302,6 @@ The catalog release includes the validated provider document and matches the fin
 - deviation D1-S8: Focused required-review closure approves the CI runner and dependency-free safe-help fixes with no remaining findings. Both regressions were RED then GREEN; all 46 CI lane contracts (293 assertions), 161 tooling tests (997 assertions), backend typecheck and lint pass. The fresh managed complete Delivery gate now passes the final corrected host head: 2722 backend tests, 14 actual installed browser cases, all selected frontend/catalog/runtime/eval/test-runner checks and strict installed evidence join. Host review.md retains initial and corrected proof separately and records the actual final gate receipt. Both declared Stage temporary roots are absent. Republish the existing host PR385 through planctl; observe exact-head CI before final handoff. Shared smoke, live models and protected branches remain untouched.
 
 - deviation D2-S3: Final catalog closure contains execution bookkeeping and the explicitly authorized D1-S8 CI workflow write-inventory refinement only; provider data, schemas, packages and the locked SPEC remain unchanged from the already-reviewed/published D2 product. The host companion PR385 is now republished after its complete corrected gate and focused review; observe current exact-head Actions for both PRs through planctl progress before handoff. Preserve D2's original full-gate and review evidence, verify this plan-only closure with the existing reviewer, then republish PR53 through planctl. No additional product behavior, model run or protected merge is part of closure.
+
+- close D2-S3 closed commit:598a4995c4b3d7f13db735d209ebda1db45f0b93
 <!-- plan:execution:end -->
