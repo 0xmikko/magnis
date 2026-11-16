@@ -5,6 +5,7 @@ Spec lock: sha256:8e87d19808001d016359bf9ec5f22410be3b810fe2073393eb0b20c8879101
 Implementation lock: sha256:f65cd9b4f3b69438050c7dd09742f16267958556d547ee896dbce998d516f581 owner:$blueprint-start  
 Active Delivery: D2  
 Unattended decisions: allowed  
+Ledger: implemented  
 
 <!-- plan:spec:start -->
 ## The Goal
@@ -918,15 +919,15 @@ The catalog release includes the validated provider document and matches the fin
 
 ##### Tasks
 
-- [x] D2S3_T1 — The catalog release includes the validated provider document and matches the final host SDK contracts. (35 min) — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
+- [x] D2S3_T1 — The catalog release includes the validated provider document and matches the final host SDK contracts. (35 min) — e12a854
 <!-- plan:task-meta:{"writes":["packages/host-stubs/","scripts/plugin-host-imports.json","scripts/build-provider-catalog.test.ts","scripts/build-catalog-index.ts","scripts/build-catalog-index.test.ts","scripts/agent-verify.ts","scripts/typecheck-all.sh",".github/workflows/","apps/desktop/build/","docs/","package.json"],"predictedActiveMinutes":35,"predictedCredits":4,"how":"Add RED release/build assertions that the providers.json artifact is present, contains no credentials/executable code and changes the existing CI/build selection when provider inputs change. Regenerate host declarations, executable SDK validators and host-import mapping from the host task checkout with the existing generation command and explicit catalog argument. Do not copy handwritten definitions or load host-stubs in backend runtime. Extend current catalog release assets and path filters to ship providers.json alongside existing metadata. Keep provider data separate from installable Source/Module package kinds and certify only the existing kinds. Build the artifact through existing catalog commands for explicit consumption by D1-S8, run the complete catalog gate once at publication and complete the required implementation review. Publish this Delivery through planctl and observe CI; a ready PR is progress while D1 remains open.","red":"bun run agent:test:backend -- scripts/build-catalog-index.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — release data is deterministic, validated and includes providers metadata — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
-- [x] `bun run agent:build:catalog` exits 0 — the normal catalog artifact includes the provider document — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
-- [ ] `bun run agent:verify:pr` exits 0 — the complete catalog gate passes before its required final review and publication
-- [x] Commit — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
+- [x] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — release data is deterministic, validated and includes providers metadata — e12a854872c15587aa4d0b99f6540aeda7b19d8e
+- [x] `bun run agent:build:catalog` exits 0 — the normal catalog artifact includes the provider document — e12a854872c15587aa4d0b99f6540aeda7b19d8e
+- [x] `bun run agent:verify:pr` exits 0 — the complete catalog gate passes before its required final review and publication — e12a854872c15587aa4d0b99f6540aeda7b19d8e
+- [x] Commit — e12a854872c15587aa4d0b99f6540aeda7b19d8e
 
 ##### Results
 
@@ -934,6 +935,7 @@ The catalog release includes the validated provider document and matches the fin
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
 | D2S3_T1 | 9ea296ccf3becbb007ad47b8ac008d87c50cdac1 | 2026-11-14T12:41:40.272Z–2026-11-15T07:07:18.488Z | 1105.6369333333334 / 1105.6369333333334 min | unavailable: not measured by planctl | RED release assertion proved providers.json was built but omitted from the public channel; the existing workflow now publishes that validated metadata asset beside indexes. RED hook fixture proved provider-only edits skipped validation; the existing commit adapter now builds the document and runs schema tests. RED released-validator fixture reproduced rejection of unknown tokens; canonical host SDK selectors regenerated AI/configuration, billing, Episode usage and ledger contracts including their transitive owners. The host import-map generator reports no map drift. Build tests verify deterministic provider data, refusal of executable code and credential values, and only Source/Module installable kinds. Normal catalog build produces 26 packages plus providers.json. Scoped project typechecks, lint and 30 selected tests pass through normal hooks; complete Delivery gate and required review follow before publication. Existing Source certification builder refreshed three content-addressed receipt sidecars; Google/Telegram/Anysite accountCompatibility and authority remain identical. — beyond writes: dist/receipts/sha256:0273bd54e4e1d5170f12eff5e4ca00472d07d63363bbc70f1c5e829fd604f520.json, dist/receipts/sha256:8e327d54d0cf56fddef62c5feb514ca1b25d6f0259a6a0d26fda83c1bf8acbae.json, dist/receipts/sha256:c23e4d9f2a41174b76f4b74244bd447ef85df254bf76c1cce5f28c78cef36d2c.json, packages/declare/__tests__/provider-contract.test.ts, providers/README.md, scripts/tst_scripts_agent_stack_001.test.ts |
+| D2S3_T1 | e12a854 | 2026-11-15T07:10:57.270Z–2026-11-16T08:28:00.325Z | 1517.0509166666666 / 1517.0509166666666 min | unavailable: not measured by planctl | Focused closure of the complete-gate failure: both new declaration suites now run through their existing package Vitest owner, with Node/Bun-compatible import.meta.dirname. The existing exact-target agent adapter recognizes declaration suites. A RED adapter fixture reproduced exit 64; GREEN verifies correct runner, retained filters and propagated child failures. Normal commit hooks pass, including both declaration suites. The main provider release implementation and regenerated canonical validators remain in ancestor 9ea296ccf3becbb007ad47b8ac008d87c50cdac1. Re-run the remaining full Delivery criterion before review and publication. — beyond writes: packages/declare/__tests__/configuration.test.ts, packages/declare/__tests__/provider-contract.test.ts, scripts/test-connectors.sh, scripts/tst_scripts_tgflood_001.test.ts |
 <!-- plan:results:D2-S3:end -->
 <!-- plan:stage:D2-S3:end -->
 <!-- plan:delivery:D2:end -->
@@ -1241,4 +1243,10 @@ The catalog release includes the validated provider document and matches the fin
 - close D2-S3 partial commit:9ea296ccf3becbb007ad47b8ac008d87c50cdac1
 
 - deviation D2-S3: The complete catalog gate reproduced a test-runner mismatch: the new declaration suites imported bun:test, while their established package gate runs Vitest. The existing exact-target agent adapter also omitted the declaration package. A RED adapter test (exit 64) now routes that package to its established Vitest lane; both suites use Vitest and the standard import.meta.dirname. No test or gate is skipped.
+
+- record-result D2-S3 commit:e12a854
+
+- deviation D2-S3: Necessary verification-owner refinement touches scripts/test-connectors.sh and its existing adapter regression; no runner, suite or gate is bypassed.
+
+- close D2-S3 closed commit:e12a854872c15587aa4d0b99f6540aeda7b19d8e
 <!-- plan:execution:end -->
