@@ -1,10 +1,10 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { moduleConfigurationFromManifest, sourceConfigurationFromManifest } from "../configuration.ts";
 
-const REPO = join(import.meta.dir, "../../..");
+const REPO = join(import.meta.dirname, "../../..");
 
 /**
  * @test-id: tst_cat_configuration_002

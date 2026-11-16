@@ -29,7 +29,7 @@ if [[ "${1:-}" == "--agent" ]]; then
       fi
     else
       case "$argument" in
-        modules/*/module/*.test.ts|modules/*/entities.test.ts|modules/*/ui/*/sourceStatusAdapter.test.ts|packages/plugin-sdk/__tests__/*.test.ts|packages/testkit/__tests__/module.test.ts)
+        modules/*/module/*.test.ts|modules/*/entities.test.ts|modules/*/ui/*/sourceStatusAdapter.test.ts|packages/declare/__tests__/*.test.ts|packages/plugin-sdk/__tests__/*.test.ts|packages/testkit/__tests__/module.test.ts)
           selected="vitest" ;;
         *) echo "Unsupported backend lane: $argument; use its owning agent:test adapter." >&2; exit 64 ;;
       esac

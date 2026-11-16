@@ -918,21 +918,22 @@ The catalog release includes the validated provider document and matches the fin
 
 ##### Tasks
 
-- [ ] D2S3_T1 — The catalog release includes the validated provider document and matches the final host SDK contracts. (35 min)
+- [x] D2S3_T1 — The catalog release includes the validated provider document and matches the final host SDK contracts. (35 min) — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
 <!-- plan:task-meta:{"writes":["packages/host-stubs/","scripts/plugin-host-imports.json","scripts/build-provider-catalog.test.ts","scripts/build-catalog-index.ts","scripts/build-catalog-index.test.ts","scripts/agent-verify.ts","scripts/typecheck-all.sh",".github/workflows/","apps/desktop/build/","docs/","package.json"],"predictedActiveMinutes":35,"predictedCredits":4,"how":"Add RED release/build assertions that the providers.json artifact is present, contains no credentials/executable code and changes the existing CI/build selection when provider inputs change. Regenerate host declarations, executable SDK validators and host-import mapping from the host task checkout with the existing generation command and explicit catalog argument. Do not copy handwritten definitions or load host-stubs in backend runtime. Extend current catalog release assets and path filters to ship providers.json alongside existing metadata. Keep provider data separate from installable Source/Module package kinds and certify only the existing kinds. Build the artifact through existing catalog commands for explicit consumption by D1-S8, run the complete catalog gate once at publication and complete the required implementation review. Publish this Delivery through planctl and observe CI; a ready PR is progress while D1 remains open.","red":"bun run agent:test:backend -- scripts/build-catalog-index.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — release data is deterministic, validated and includes providers metadata
-- [ ] `bun run agent:build:catalog` exits 0 — the normal catalog artifact includes the provider document
+- [x] `bun run agent:test:backend -- scripts/build-provider-catalog.test.ts scripts/build-catalog-index.test.ts` exits 0 — release data is deterministic, validated and includes providers metadata — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
+- [x] `bun run agent:build:catalog` exits 0 — the normal catalog artifact includes the provider document — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
 - [ ] `bun run agent:verify:pr` exits 0 — the complete catalog gate passes before its required final review and publication
-- [ ] Commit
+- [x] Commit — 9ea296ccf3becbb007ad47b8ac008d87c50cdac1
 
 ##### Results
 
 <!-- plan:results:D2-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| D2S3_T1 | 9ea296ccf3becbb007ad47b8ac008d87c50cdac1 | 2026-11-14T12:41:40.272Z–2026-11-15T07:07:18.488Z | 1105.6369333333334 / 1105.6369333333334 min | unavailable: not measured by planctl | RED release assertion proved providers.json was built but omitted from the public channel; the existing workflow now publishes that validated metadata asset beside indexes. RED hook fixture proved provider-only edits skipped validation; the existing commit adapter now builds the document and runs schema tests. RED released-validator fixture reproduced rejection of unknown tokens; canonical host SDK selectors regenerated AI/configuration, billing, Episode usage and ledger contracts including their transitive owners. The host import-map generator reports no map drift. Build tests verify deterministic provider data, refusal of executable code and credential values, and only Source/Module installable kinds. Normal catalog build produces 26 packages plus providers.json. Scoped project typechecks, lint and 30 selected tests pass through normal hooks; complete Delivery gate and required review follow before publication. Existing Source certification builder refreshed three content-addressed receipt sidecars; Google/Telegram/Anysite accountCompatibility and authority remain identical. — beyond writes: dist/receipts/sha256:0273bd54e4e1d5170f12eff5e4ca00472d07d63363bbc70f1c5e829fd604f520.json, dist/receipts/sha256:8e327d54d0cf56fddef62c5feb514ca1b25d6f0259a6a0d26fda83c1bf8acbae.json, dist/receipts/sha256:c23e4d9f2a41174b76f4b74244bd447ef85df254bf76c1cce5f28c78cef36d2c.json, packages/declare/__tests__/provider-contract.test.ts, providers/README.md, scripts/tst_scripts_agent_stack_001.test.ts |
 <!-- plan:results:D2-S3:end -->
 <!-- plan:stage:D2-S3:end -->
 <!-- plan:delivery:D2:end -->
@@ -1216,4 +1217,28 @@ The catalog release includes the validated provider document and matches the fin
 - deviation D1-S7: packages/client-core/src/episodes/usage.ts: EpisodeUsage needs resolved inherited shape evidence for its parent. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
 
 - close D1-S7 closed commit:071d9e1fd8b115439260765ecaa371fc99cd48fe
+
+- record-result D2-S3 commit:9ea296ccf3becbb007ad47b8ac008d87c50cdac1
+
+- deviation D2-S3: Used the established selective SDK export to preserve unrelated frontend/Graph APIs in the older catalog checkout. All affected validators/declarations and transitive dependencies are generated from the explicit host task checkout; no handwritten contract copies. Existing packages/declare provider test exercises the released nullable billing validators.
+
+- deviation D2-S3: Existing Source configuration declarations change package/definition hashes, so their existing builder-generated receipt sidecars are updated rather than retaining stale sidecars. Account compatibility and authority compare unchanged for all three affected Sources. No provider certification kind or live run was added.
+
+- deviation D2-S3: The tooling-only provenance manifest update was removed from the unpublished commit after the protected-path guard correctly refused it. All managed runtime files were already identical; verified necessary planctl repair remains available through its owned source MCP path without expanding this Delivery's protected paths.
+
+- deviation D2-S3: Implementation type not listed in SPEC: SourceCredentialRefreshResult in packages/host-stubs/types/packages/sdk/core/source-auth.d.ts
+
+- deviation D2-S3: packages/host-stubs/types/packages/sdk/core/ai-model.d.ts: AiUsageStatus needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S3: packages/host-stubs/types/packages/sdk/core/ai-model.d.ts: AiCostStatus needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S3: packages/host-stubs/types/packages/sdk/core/ai-model.d.ts: AiBillingMode needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S3: packages/host-stubs/types/packages/sdk/core/billing.d.ts: BillingCoverage needs resolved shape evidence for its indirect contract. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- deviation D2-S3: packages/host-stubs/types/packages/sdk/core/source-auth.d.ts: SourceCredentialRefreshResult is not listed in SPEC; record the implementation change without reopening approval. Compare the actual declaration with the approved flow; correct an accidental mismatch autonomously.
+
+- close D2-S3 partial commit:9ea296ccf3becbb007ad47b8ac008d87c50cdac1
+
+- deviation D2-S3: The complete catalog gate reproduced a test-runner mismatch: the new declaration suites imported bun:test, while their established package gate runs Vitest. The existing exact-target agent adapter also omitted the declaration package. A RED adapter test (exit 64) now routes that package to its established Vitest lane; both suites use Vitest and the standard import.meta.dirname. No test or gate is skipped.
 <!-- plan:execution:end -->

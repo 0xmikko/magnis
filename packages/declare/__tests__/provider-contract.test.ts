@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { join } from "node:path";
 
 import { AiProviderCatalogDocumentSchema } from "../../host-stubs/types/packages/sdk/core/ai-model.js";
@@ -18,7 +18,7 @@ test("tst_provider_contract_002 released validators preserve unknown usage indep
 
 /** Static catalog data cannot select a saved connection or another provider's reader. */
 test("tst_provider_contract_001 declared model admission retains provider and connection ownership", () => {
-  const document = readProviderCatalog(join(import.meta.dir, "../../..", "providers"));
+  const document = readProviderCatalog(join(import.meta.dirname, "../../..", "providers"));
   const entry = document.entries.find(({ provider }) => provider.id === "typesafe");
   if (entry === undefined || entry.models[0] === undefined) throw new Error("TypeSafe model fixture is missing");
   const model = entry.models[0];

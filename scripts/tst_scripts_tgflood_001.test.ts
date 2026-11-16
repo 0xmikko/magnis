@@ -40,6 +40,7 @@ exit "$FLOOD_RUNNER_EXIT"
       ["sources/x/src/__tests__/xContract.test.ts", ["bun", "test"]],
       ["sources/mock-gmail/src/execute.test.ts", ["bunx", "vitest", "run"]],
       [moduleTest, ["bunx", "vitest", "run"]],
+      ["packages/declare/__tests__/derive.test.ts", ["bunx", "vitest", "run"]],
     ] as const) {
       const args = [target, "-t", "keeps a spaced filter"];
       const passed = invoke(["--agent", ...args]);
